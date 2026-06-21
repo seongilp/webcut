@@ -130,6 +130,14 @@
     .tl-progress > div { height: 100%; width: 0; background: linear-gradient(90deg,var(--fc-blue),#6fa8dc); transition: width .15s; }
 
     #file { display: none; }
+    .dropzone { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center;
+      background: rgba(8,9,12,.82); backdrop-filter: blur(3px); }
+    .dropzone.show { display: flex; }
+    .dropzone .box { border: 2.5px dashed var(--fc-blue); border-radius: 18px; padding: 54px 76px; text-align: center;
+      background: rgba(41,151,255,.06); box-shadow: 0 0 60px -10px rgba(41,151,255,.4); pointer-events: none; }
+    .dropzone .box .ic { font-size: 52px; margin-bottom: 14px; }
+    .dropzone .box .t { font-size: 20px; font-weight: 700; color: var(--fc-text); }
+    .dropzone .box .s { font-size: 13px; color: var(--fc-muted); margin-top: 8px; }
     .log-pop { position: fixed; right: 12px; bottom: 16px; width: 340px; max-height: 170px; overflow: auto; background: #0d0e10; border: 1px solid var(--fc-line); border-radius: 8px; padding: 8px 10px; font-family: ui-monospace,Menlo,monospace; font-size: 10.5px; color: var(--fc-muted); white-space: pre-wrap; z-index: 40; display: none; }
     .log-pop.show { display: block; }
   </style>
@@ -268,6 +276,7 @@
   </div>
 
   <input type="file" id="file" accept="video/*" />
+  <div class="dropzone" id="dropzone"><div class="box"><div class="ic">🎬</div><div class="t">영상을 여기에 놓으세요</div><div class="s">파일은 업로드되지 않고 브라우저에서 바로 열립니다</div></div></div>
   <pre class="log-pop" id="log">대기 중…</pre>
 
   <script type="module">
@@ -323,31 +332,54 @@
 
     // ---- FFmpeg ----
     const ffmpeg = new FFmpeg();
-    let loaded = false;
-    ffmpeg.on('log', ({ message }) => { if (message) log(message); });
+    let loaded = false, loadPromise = null, mountSeq = 0;
+    ffmpeg.on('log', ({ message }) => { if (message && message !== 'Aborted()') log(message); });
     ffmpeg.on('progress', ({ progress }) => { if (progress >= 0 && progress <= 1) bar.style.width = (progress*100).toFixed(1) + '%'; });
-    async function ensureLoaded() {
-      if (loaded) return;
-      statusEl.textContent = 'FFmpeg 로딩…'; statusEl.className = 'pill busy';
-      log('FFmpeg 코어 다운로드 중 (최초 1회, ~25MB)…');
-      const base = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-      loaded = true; statusEl.textContent = 'FFmpeg 준비됨'; statusEl.className = 'pill ok'; log('FFmpeg 엔진 준비 완료 ✓');
+    // Memoized so concurrent callers (import + export) share ONE core download;
+    // resets on failure so a flaky CDN fetch can be retried.
+    function ensureLoaded() {
+      if (loaded) return Promise.resolve();
+      if (loadPromise) return loadPromise;
+      loadPromise = (async () => {
+        statusEl.textContent = 'FFmpeg 로딩…'; statusEl.className = 'pill busy';
+        log('FFmpeg 코어 다운로드 중 (최초 1회, ~25MB)…');
+        const base = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        loaded = true; statusEl.textContent = 'FFmpeg 준비됨'; statusEl.className = 'pill ok'; log('FFmpeg 엔진 준비 완료 ✓');
+      })().catch(e => { loadPromise = null; throw e; });
+      return loadPromise;
     }
 
     // ---- Import ----
     $('importBtn').onclick = () => $('file').click();
-    $('file').onchange = e => {
-      const f = e.target.files[0]; if (!f) return;
+    $('file').onchange = e => loadVideoFile(e.target.files[0]);
+
+    function loadVideoFile(f) {
+      if (!f) return;
+      if (!f.type.startsWith('video/') && !/\.(mp4|mov|webm|mkv|avi|m4v|m2ts|ts)$/i.test(f.name)) {
+        log('영상 파일이 아닙니다: ' + f.name); return;
+      }
       sourceFile = f; sourceExt = (f.name.split('.').pop() || 'mp4').toLowerCase();
       video.src = URL.createObjectURL(f); video.style.display = 'block'; $('viewerEmpty').style.display = 'none';
       log(`가져옴: ${f.name} (${(f.size/1048576).toFixed(1)} MB)`);
       $('browser').innerHTML = `<div class="src-card"><div class="filmstrip"></div><div class="m"><b title="${f.name}">${f.name}</b><span>${(f.size/1048576).toFixed(1)} MB · <span id="srcDur">…</span></span></div></div>`;
       ensureLoaded().catch(err => { log('엔진 로드 실패: ' + err); statusEl.textContent = '로드 실패'; statusEl.className = 'pill'; });
-    };
+    }
+
+    // ---- Drag & drop ----
+    let dragDepth = 0;
+    const dz = $('dropzone');
+    window.addEventListener('dragenter', e => { if (![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); dragDepth++; dz.classList.add('show'); });
+    window.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+    window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; dz.classList.remove('show'); } });
+    window.addEventListener('drop', e => {
+      e.preventDefault(); dragDepth = 0; dz.classList.remove('show');
+      const f = [...(e.dataTransfer.files || [])][0];
+      if (f) loadVideoFile(f);
+    });
     video.addEventListener('loadedmetadata', () => {
       duration = video.duration; outPt = duration; inPt = 0;
       $('totT').textContent = fmt(duration);
@@ -726,32 +758,52 @@
         await ensureLoaded(); stopProgram();
         $('export').disabled = true; statusEl.textContent = '내보내는 중…'; statusEl.className = 'pill busy';
         bar.style.width = '0%'; $('exportStat').textContent = '처리 중…';
-        const t0 = performance.now(), precise = $('precise').checked, inputName = 'input.' + sourceExt;
-        await ffmpeg.writeFile(inputName, await fetchFile(sourceFile));
-        const parts = [];
-        for (let i = 0; i < clips.length; i++) {
-          const c = clips[i], part = `part${i}.mp4`, dur = (c.end - c.start).toFixed(3);
-          const args = ['-ss', c.start.toFixed(3), '-i', inputName, '-t', dur];
-          if (precise) args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac','-movflags','+faststart');
-          else args.push('-c','copy','-avoid_negative_ts','1');
-          args.push(part);
-          log(`클립 ${i+1}/${clips.length} 자르는 중…`); await ffmpeg.exec(args); parts.push(part);
+        const t0 = performance.now(), precise = $('precise').checked;
+        // Mount the source via WORKERFS so FFmpeg reads it straight from the File —
+        // no copying the whole (possibly multi-GB / 1-hour) video into WASM memory.
+        let inputPath = 'input.' + sourceExt, mountDir = null, wroteInput = false;
+        try {
+          mountDir = '/mnt' + (++mountSeq);
+          await ffmpeg.createDir(mountDir);
+          await ffmpeg.mount('WORKERFS', { files: [sourceFile] }, mountDir);
+          inputPath = mountDir + '/' + sourceFile.name;
+          log('소스 마운트(WORKERFS) — 메모리 복사 없이 직접 읽기');
+        } catch (e) {
+          mountDir = null;
+          log('WORKERFS 미지원 → 메모리 로드로 대체');
+          await ffmpeg.writeFile(inputPath, await fetchFile(sourceFile)); wroteInput = true;
         }
-        let outData;
-        if (parts.length === 1) outData = await ffmpeg.readFile(parts[0]);
-        else {
-          await ffmpeg.writeFile('list.txt', new TextEncoder().encode(parts.map(p => `file '${p}'`).join('\n')));
-          log('클립 이어붙이는 중…');
-          await ffmpeg.exec(['-f','concat','-safe','0','-i','list.txt','-c','copy','output.mp4']);
-          outData = await ffmpeg.readFile('output.mp4');
+        try {
+          const parts = [];
+          for (let i = 0; i < clips.length; i++) {
+            const c = clips[i], part = `part${i}.mp4`, dur = (c.end - c.start).toFixed(3);
+            const args = ['-ss', c.start.toFixed(3), '-i', inputPath, '-t', dur];
+            if (precise) args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac','-movflags','+faststart');
+            else args.push('-c','copy','-avoid_negative_ts','1');
+            args.push(part);
+            log(`클립 ${i+1}/${clips.length} 자르는 중…`); await ffmpeg.exec(args); parts.push(part);
+          }
+          let outName;
+          if (parts.length === 1) outName = parts[0];
+          else {
+            await ffmpeg.writeFile('list.txt', new TextEncoder().encode(parts.map(p => `file '${p}'`).join('\n')));
+            log('클립 이어붙이는 중…');
+            await ffmpeg.exec(['-f','concat','-safe','0','-i','list.txt','-c','copy','output.mp4']);
+            outName = 'output.mp4';
+          }
+          const outData = await ffmpeg.readFile(outName);
+          const blob = new Blob([outData.buffer], { type: 'video/mp4' }), url = URL.createObjectURL(blob);
+          video.src = url; video.style.display = 'block'; $('viewerEmpty').style.display = 'none';
+          const dl = $('download'); dl.href = url; dl.download = 'webcut-export.mp4'; dl.style.display = 'inline-flex';
+          bar.style.width = '100%';
+          const secs = ((performance.now() - t0)/1000).toFixed(1);
+          $('exportStat').textContent = `완료 · ${(blob.size/1048576).toFixed(1)} MB · ${secs}s`;
+          statusEl.textContent = '내보내기 완료'; statusEl.className = 'pill ok'; log(`내보내기 완료 ✓ (${secs}s)`);
+          for (const p of parts) { try { await ffmpeg.deleteFile(p); } catch (_) {} }
+        } finally {
+          if (mountDir) { try { await ffmpeg.unmount(mountDir); } catch (_) {} try { await ffmpeg.deleteDir(mountDir); } catch (_) {} }
+          if (wroteInput) { try { await ffmpeg.deleteFile(inputPath); } catch (_) {} }
         }
-        const blob = new Blob([outData.buffer], { type: 'video/mp4' }), url = URL.createObjectURL(blob);
-        video.src = url; video.style.display = 'block'; $('viewerEmpty').style.display = 'none';
-        const dl = $('download'); dl.href = url; dl.download = 'wasmcut-export.mp4'; dl.style.display = 'inline-flex';
-        bar.style.width = '100%';
-        const secs = ((performance.now() - t0)/1000).toFixed(1);
-        $('exportStat').textContent = `완료 · ${(blob.size/1048576).toFixed(1)} MB · ${secs}s`;
-        statusEl.textContent = '내보내기 완료'; statusEl.className = 'pill ok'; log(`내보내기 완료 ✓ (${secs}s)`);
       } catch (err) { log('내보내기 오류: ' + err); $('exportStat').textContent = '오류 발생'; statusEl.textContent = '오류'; statusEl.className = 'pill'; }
       finally { $('export').disabled = clips.length === 0; }
     };
