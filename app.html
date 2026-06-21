@@ -412,12 +412,42 @@
       const f = [...(e.dataTransfer.files || [])][0];
       if (f) loadVideoFile(f);
     });
-    video.addEventListener('loadedmetadata', () => {
-      duration = video.duration; outPt = duration; inPt = 0;
+    // Some MP4/WebM files report `duration` as Infinity (or 0) until forced.
+    // Seek to a huge time once to make the browser compute the real duration.
+    let durationResolving = false;
+    function applyDuration(d) {
+      if (!isFinite(d) || d <= 0) return;
+      duration = d;
+      if (outPt <= 0 || outPt > duration) { outPt = duration; inPt = 0; }
       $('totT').textContent = fmt(duration);
       const sd = $('srcDur'); if (sd) sd.textContent = fmt(duration);
       updateSeg(); renderSrcStrip();
-    });
+    }
+    function resolveDuration() {
+      const d = video.duration;
+      if ((d === Infinity || isNaN(d) || d <= 0) && !durationResolving && video.readyState >= 1) {
+        durationResolving = true;
+        const onSeek = () => {
+          video.removeEventListener('seeked', onSeek);
+          durationResolving = false;
+          const real = video.duration;
+          video.currentTime = 0;
+          if (isFinite(real) && real > 0) applyDuration(real);
+        };
+        video.addEventListener('seeked', onSeek);
+        try { video.currentTime = 1e7; } catch (_) { durationResolving = false; }
+        return;
+      }
+      applyDuration(d);
+    }
+    // Best-known duration, falling back to the seekable range.
+    function bestDuration() {
+      if (isFinite(duration) && duration > 0) return duration;
+      try { if (video.seekable && video.seekable.length) { const e = video.seekable.end(video.seekable.length - 1); if (isFinite(e) && e > 0) return e; } } catch (_) {}
+      return 0;
+    }
+    video.addEventListener('loadedmetadata', resolveDuration);
+    video.addEventListener('durationchange', resolveDuration);
 
     // ---- Viewer / modes ----
     function setMode(m) { mode = m; const b = $('modeBadge'); b.textContent = m === 'program' ? '프로그램' : '소스'; b.className = 'badge' + (m === 'program' ? ' prog' : ''); }
@@ -453,10 +483,11 @@
     function updateSeg() { $('inT').textContent = fmt(inPt); $('outT').textContent = fmt(outPt); $('segT').textContent = fmt(Math.max(0, outPt-inPt)); }
     $('setIn').onclick = () => { inPt = video.currentTime; if (outPt <= inPt) outPt = duration; updateSeg(); renderSrcStrip(); };
     $('setOut').onclick = () => { outPt = video.currentTime; if (outPt <= inPt) inPt = 0; updateSeg(); renderSrcStrip(); };
-    $('addClip').onclick = () => addClip(inPt, outPt);
-    $('addFull').onclick = () => addClip(0, duration);
+    $('addClip').onclick = () => { let e = outPt; if (!(isFinite(e) && e > inPt)) e = bestDuration(); addClip(inPt, e); };
+    $('addFull').onclick = () => addClip(0, bestDuration());
     function addClip(s, e) {
       if (!sourceFile) { log('먼저 영상을 가져오세요.'); return; }
+      if (!isFinite(s) || !isFinite(e) || e <= 0) { log('영상 길이를 아직 못 읽었어요. 잠시 후 다시 시도하거나, 끝까지 한 번 재생한 뒤 추가해 주세요.'); return; }
       if (e - s < 0.05) { log('구간이 너무 짧습니다.'); return; }
       pushHistory();
       clips.push({ start: s, end: e, id: ++clipSeq });
@@ -673,7 +704,9 @@
 
     // ---- Timeline render ----
     function renderTimeline() {
-      const lane = $('lane'), total = seqDuration(), inner = $('tlInner');
+      const lane = $('lane'), inner = $('tlInner');
+      let total = seqDuration();
+      if (!isFinite(total) || total < 0) total = 0;   // never let a bad duration break layout/loops
       // Auto-fit: keep the whole sequence within the visible width (a 1-hour clip
       // fills the timeline instead of overflowing). Manual zoom disables this.
       if (autoFit && total > 0) { PXPS = fitPXPS(total); $('zoom').value = Math.round(clamp(PXPS, 20, 400)); }
@@ -681,7 +714,7 @@
 
       const ruler = $('ruler'); ruler.innerHTML = '';
       const step = total > 0 ? niceStep(PXPS) : 1;
-      for (let s = 0; s <= Math.ceil(total) + step; s += step) {
+      for (let s = 0, n = 0; s <= Math.ceil(total) + step && n < 2000; s += step, n++) {
         const t = document.createElement('div'); t.className = 'tick'; t.style.left = (s*PXPS) + 'px';
         t.textContent = fmt(s).replace(/\.00$/, ''); ruler.appendChild(t);
       }
