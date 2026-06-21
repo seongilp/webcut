@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — webcut</title>
+  <meta name="robots" content="index,follow" />
+  <style>
+    :root { --bg:#0d0e11; --panel:#16171b; --line:#2a2c34; --text:#eceef3; --muted:#9498a6; --blue:#2997ff; --green:#5fd38a; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); font-family:ui-sans-serif,system-ui,-apple-system,sans-serif; line-height:1.7; -webkit-font-smoothing:antialiased; }
+    a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
+    nav { height:60px; display:flex; align-items:center; border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(13,14,17,.8); backdrop-filter:blur(10px); }
+    nav .wrap, main { max-width:760px; margin:0 auto; padding:0 24px; width:100%; }
+    .logo { font-weight:800; font-size:18px; } .logo .c { color:var(--blue); }
+    nav .sp { flex:1; }
+    nav a { color:var(--muted); font-size:14px; margin-left:20px; }
+    main { padding:56px 24px 96px; }
+    h1 { font-size:34px; letter-spacing:-.5px; margin-bottom:6px; }
+    .updated { color:var(--muted); font-size:13.5px; margin-bottom:28px; }
+    .tldr { background:rgba(95,211,138,.06); border:1px solid #2f6b46; border-radius:12px; padding:18px 20px; margin-bottom:32px; }
+    .tldr b { color:var(--green); }
+    h2 { font-size:19px; margin:32px 0 10px; letter-spacing:-.3px; }
+    p, li { color:#cdd0d8; font-size:15px; }
+    ul { margin:8px 0 0 20px; } li { margin-bottom:6px; }
+    .muted { color:var(--muted); }
+    footer { border-top:1px solid var(--line); padding:28px 0; color:var(--muted); font-size:13.5px; }
+    footer .wrap { max-width:760px; margin:0 auto; padding:0 24px; display:flex; gap:16px; flex-wrap:wrap; }
+    footer .sp { flex:1; }
+  </style>
+</head>
+<body>
+  <nav><div class="wrap" style="display:flex;align-items:center">
+    <a href="./" class="logo">✂️ web<span class="c">cut</span></a><span class="sp"></span>
+    <a href="./">Home</a><a href="../app.html">Editor</a><a href="../privacy.html">한국어</a>
+  </div></nav>
+
+  <main>
+    <h1>Privacy Policy</h1>
+    <div class="updated">Last updated: June 21, 2026</div>
+
+    <div class="tldr">
+      <b>TL;DR —</b> webcut <b>does not upload your video.</b> All editing happens inside your
+      browser, and your files never leave your device. No accounts, no logins, no tracking.
+    </div>
+
+    <h2>1. Personal data we collect</h2>
+    <p>webcut collects no personal data — no name, email, or phone number. There is no sign-up or login.</p>
+
+    <h2>2. How your video &amp; files are processed</h2>
+    <p>Imported videos are never sent to a server. Cutting, joining, fades, subtitles and every other
+      operation run entirely inside your browser via WebAssembly (FFmpeg.wasm). The exported result is
+      generated in the browser and downloaded directly by you.</p>
+
+    <h2>3. External requests</h2>
+    <p>webcut downloads the following static assets from public CDNs <span class="muted">once</span>, only
+      as needed to function. Your video and personal data are never sent during this.</p>
+    <ul>
+      <li>FFmpeg core (unpkg CDN)</li>
+      <li>Korean subtitle font Pretendard (jsDelivr CDN) — only when subtitles are used</li>
+    </ul>
+    <p class="muted" style="margin-top:8px">CDN providers and the host (GitHub Pages) may record standard access logs such as IP addresses as part of normal web traffic. This is default behavior of third-party infrastructure that webcut does not control.</p>
+
+    <h2>4. Cookies &amp; analytics</h2>
+    <p>webcut uses no cookies, ads, or analytics tools.</p>
+
+    <h2>5. Sharing with third parties</h2>
+    <p>Since we collect no personal data, there is nothing to share or sell.</p>
+
+    <h2>6. Changes</h2>
+    <p>Any changes to this policy will be posted on this page.</p>
+
+    <h2>7. Contact</h2>
+    <p>Questions? Open an issue on <a href="https://github.com/seongilp/webcut/issues" target="_blank" rel="noopener">GitHub Issues</a>.</p>
+  </main>
+
+  <footer><div class="wrap">
+    <span>✂️ webcut</span><span class="sp"></span>
+    <a href="./">Home</a><a href="https://github.com/seongilp/webcut" target="_blank" rel="noopener">GitHub</a>
+  </div></footer>
+</body>
+</html>

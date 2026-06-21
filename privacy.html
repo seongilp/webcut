@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>개인정보처리방침 — webcut</title>
+  <meta name="robots" content="index,follow" />
+  <style>
+    :root { --bg:#0d0e11; --panel:#16171b; --line:#2a2c34; --text:#eceef3; --muted:#9498a6; --blue:#2997ff; --green:#5fd38a; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); font-family:ui-sans-serif,system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif; line-height:1.7; -webkit-font-smoothing:antialiased; }
+    a { color:var(--blue); text-decoration:none; } a:hover { text-decoration:underline; }
+    nav { height:60px; display:flex; align-items:center; border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(13,14,17,.8); backdrop-filter:blur(10px); }
+    nav .wrap, main { max-width:760px; margin:0 auto; padding:0 24px; width:100%; }
+    .logo { font-weight:800; font-size:18px; } .logo .c { color:var(--blue); }
+    nav .sp { flex:1; }
+    nav a { color:var(--muted); font-size:14px; margin-left:20px; }
+    main { padding:56px 24px 96px; }
+    h1 { font-size:34px; letter-spacing:-.5px; margin-bottom:6px; }
+    .updated { color:var(--muted); font-size:13.5px; margin-bottom:28px; }
+    .tldr { background:rgba(95,211,138,.06); border:1px solid #2f6b46; border-radius:12px; padding:18px 20px; margin-bottom:32px; }
+    .tldr b { color:var(--green); }
+    h2 { font-size:19px; margin:32px 0 10px; letter-spacing:-.3px; }
+    p, li { color:#cdd0d8; font-size:15px; }
+    ul { margin:8px 0 0 20px; } li { margin-bottom:6px; }
+    .muted { color:var(--muted); }
+    footer { border-top:1px solid var(--line); padding:28px 0; color:var(--muted); font-size:13.5px; }
+    footer .wrap { max-width:760px; margin:0 auto; padding:0 24px; display:flex; gap:16px; flex-wrap:wrap; }
+    footer .sp { flex:1; }
+  </style>
+</head>
+<body>
+  <nav><div class="wrap" style="display:flex;align-items:center">
+    <a href="./" class="logo">✂️ web<span class="c">cut</span></a><span class="sp"></span>
+    <a href="./">홈</a><a href="./app.html">편집기</a><a href="./en/privacy.html">EN</a>
+  </div></nav>
+
+  <main>
+    <h1>개인정보처리방침</h1>
+    <div class="updated">최종 업데이트: 2026년 6월 21일</div>
+
+    <div class="tldr">
+      <b>요약 —</b> webcut은 영상을 <b>업로드받지 않습니다.</b> 모든 편집은 당신의 브라우저 안에서 처리되며,
+      영상 파일은 당신의 기기를 떠나지 않습니다. 회원가입·로그인·추적이 없습니다.
+    </div>
+
+    <h2>1. 수집하는 개인정보</h2>
+    <p>webcut은 이름, 이메일, 전화번호 등 어떤 개인정보도 수집하지 않습니다. 회원가입이나 로그인 절차가 없습니다.</p>
+
+    <h2>2. 영상·파일 처리 방식</h2>
+    <p>가져온 영상은 서버로 전송되지 않습니다. 자르기·이어붙이기·페이드·자막 등 모든 처리는
+      WebAssembly(FFmpeg.wasm)를 통해 <b>당신의 브라우저 내부에서만</b> 이루어집니다.
+      편집 결과물도 브라우저에서 생성되어 당신이 직접 다운로드합니다.</p>
+
+    <h2>3. 외부 통신</h2>
+    <p>webcut은 동작에 필요한 다음 정적 자원을 외부 CDN에서 <span class="muted">최초 1회</span> 내려받습니다.
+      이 과정에서 당신의 영상이나 개인정보는 전송되지 않습니다.</p>
+    <ul>
+      <li>FFmpeg 코어 (unpkg CDN)</li>
+      <li>한글 자막 폰트 Pretendard (jsDelivr CDN) — 자막 기능 사용 시에만</li>
+    </ul>
+    <p class="muted" style="margin-top:8px">CDN 제공자 및 호스팅(GitHub Pages)은 일반적인 웹 접속 과정에서 IP 주소 등 표준 접속 로그를 자체적으로 기록할 수 있습니다. 이는 webcut이 통제하지 않는 제3자 인프라의 기본 동작입니다.</p>
+
+    <h2>4. 쿠키 및 분석 도구</h2>
+    <p>webcut은 쿠키, 광고, 사용자 행동 분석(Analytics) 도구를 사용하지 않습니다.</p>
+
+    <h2>5. 제3자 제공</h2>
+    <p>수집하는 개인정보가 없으므로 제3자에게 제공하거나 판매하는 정보가 없습니다.</p>
+
+    <h2>6. 변경 고지</h2>
+    <p>본 방침이 변경되면 이 페이지에 게시합니다.</p>
+
+    <h2>7. 문의</h2>
+    <p>문의는 <a href="https://github.com/seongilp/webcut/issues" target="_blank" rel="noopener">GitHub Issues</a>로 남겨주세요.</p>
+  </main>
+
+  <footer><div class="wrap">
+    <span>✂️ webcut</span><span class="sp"></span>
+    <a href="./">홈</a><a href="https://github.com/seongilp/webcut" target="_blank" rel="noopener">GitHub</a>
+  </div></footer>
+</body>
+</html>

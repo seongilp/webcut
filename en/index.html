@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>webcut — a blazing-fast video editor in your browser</title>
+  <meta name="description" content="No install, no signup. Cut and export video right in a browser tab — a blazing-fast web video editor powered by FFmpeg.wasm." />
+  <meta property="og:title" content="webcut — a blazing-fast video editor in your browser" />
+  <meta property="og:description" content="Zero install, zero loading. Open it and start cutting — a blazing-fast web video editor." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://seongilp.github.io/webcut/og.png" />
+  <meta property="og:url" content="https://seongilp.github.io/webcut/en/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://seongilp.github.io/webcut/og.png" />
+  <link rel="stylesheet" href="../css/landing.css" />
+</head>
+<body>
+  <nav class="top">
+    <div class="wrap">
+      <span class="logo">✂️ web<span class="c">cut</span></span>
+      <span class="sp"></span>
+      <a class="nav-link hide" href="#features">Features</a>
+      <a class="nav-link hide" href="#how">How</a>
+      <a class="nav-link" href="../">한국어</a>
+      <a class="nav-link" href="https://github.com/seongilp/webcut" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn primary" href="../app.html">Open editor →</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap">
+      <span class="eyebrow"><span class="dot"></span> ⚡ Cut &amp; Go, right in your browser</span>
+      <h1>Open it, <span class="grad">start cutting</span></h1>
+      <p class="sub">No heavy app. Cut and export right in a browser tab — a blazing-fast web video editor.</p>
+      <div class="cta">
+        <a class="btn primary lg" href="../app.html">▶ Start cutting now</a>
+        <a class="btn lg" href="https://github.com/seongilp/webcut" target="_blank" rel="noopener">★ View on GitHub</a>
+      </div>
+      <p class="reassure">No install · No signup · Free · Open source · Desktop browser</p>
+
+      <div class="mock-wrap">
+        <div class="mock">
+          <div class="chrome">
+            <span class="light r"></span><span class="light y"></span><span class="light g"></span>
+            <span class="mt">✂️ web<b>cut</b> — timeline editing</span>
+          </div>
+          <div class="mock-top">
+            <div class="mp">
+              <div class="h">Library</div>
+              <div class="libitem"><div class="thumb"></div><div class="tt"><b>clip.mp4</b><span>13.1MB · 0:09</span></div></div>
+            </div>
+            <div class="mp viewer"><div class="frame"></div></div>
+            <div class="mp">
+              <div class="h">Inspector</div>
+              <div class="field"><div class="k">In</div><div class="v">0:01.20</div></div>
+              <div class="field"><div class="k">Out</div><div class="v">0:06.40</div></div>
+              <div class="field"><div class="k">Dur</div><div class="v b">0:05.20</div></div>
+            </div>
+          </div>
+          <div class="mock-tl">
+            <div class="tlbar"><b style="color:var(--text)">Timeline</b><span>3 clips</span><span class="chip on">⬚ Range</span><span class="chip">✂</span><span class="chip on">⌖</span><span style="margin-left:auto">Zoom ▭▭▭</span></div>
+            <div class="track">
+              <div class="clip" style="left:0; width:30%"><span class="lab">Clip 1</span></div>
+              <div class="clip" style="left:31%; width:24%"><span class="lab">Clip 2</span></div>
+              <div class="clip" style="left:56%; width:40%"><span class="lab">Clip 3</span></div>
+              <div class="range" style="left:31%; width:24%"></div>
+              <div class="ph" style="left:43%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="seclabel">Features</div>
+      <h2 class="sectitle">Everything you need to cut</h2>
+      <p class="secsub">A Final Cut–style timeline with all the core cutting tools built in.</p>
+      <div class="grid">
+        <div class="card"><div class="ic">✂️</div><h3>Cut &amp; join</h3><p>Trim ranges into clips and stitch them in order. Fast copy cut and precise re-encode modes.</p></div>
+        <div class="card"><div class="ic">⬚</div><h3>Range select</h3><p>Drag on the timeline to select a span, then keep only it or delete it. Clips snap together magnetically.</p></div>
+        <div class="card"><div class="ic">▶</div><h3>Sequence playback</h3><p>A program monitor that plays the whole edit, with a playhead that glides smoothly across clip boundaries.</p></div>
+        <div class="card"><div class="ic">⟷</div><h3>Trim handles</h3><p>Drag a clip's edges to adjust In/Out instantly. Blade to split at the playhead.</p></div>
+        <div class="card"><div class="ic">🔍</div><h3>Zoom &amp; skim</h3><p>Zoom the timeline, hover to preview frames, snap to edit points.</p></div>
+        <div class="card"><div class="ic">🅵</div><h3>Fade &amp; subtitles</h3><p>Fade in/out and timed text overlays, rendered right in the browser.</p></div>
+        <div class="card"><div class="ic">🔒</div><h3>Private by design</h3><p>Zero uploads, zero servers. Your video is processed only inside your browser.</p></div>
+        <div class="card"><div class="ic">⚡</div><h3>FFmpeg.wasm</h3><p>Native codecs via WebAssembly. Real encoding in the browser, no install.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" style="padding-top:0">
+    <div class="wrap">
+      <div class="seclabel">How it works</div>
+      <h2 class="sectitle">Three steps, done</h2>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h3>Import</h3><p>Drag &amp; drop a video, or pick a file. It's not an upload — the browser reads it directly.</p></div>
+        <div class="step"><div class="n">2</div><h3>Edit</h3><p>Drag to select spans to keep or cut, stitch clips, and check it with the playhead.</p></div>
+        <div class="step"><div class="n">3</div><h3>Export</h3><p>One click outputs an mp4 to download. The file never leaves your device.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="band">
+    <section>
+      <div class="wrap inner">
+        <div class="lock">🔒</div>
+        <div>
+          <h2>Your video never leaves your device</h2>
+          <p>No cloud uploads, no backend servers. Everything runs inside your browser, so you can edit even sensitive footage with peace of mind.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="finalcta">
+    <div class="wrap">
+      <h2>Start cutting right now</h2>
+      <p>No install, no signup — one click opens the editor.</p>
+      <a class="btn primary lg" href="../app.html">▶ Open editor</a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span class="logo" style="font-size:15px">✂️ web<span class="c">cut</span></span>
+      <span class="sp"></span>
+      <span>Made with FFmpeg.wasm · 100% client-side</span>
+      <a href="./privacy.html">Privacy</a>
+      <a href="../">한국어</a>
+      <a href="https://github.com/seongilp/webcut" target="_blank" rel="noopener">GitHub</a>
+      <a href="../app.html">Editor</a>
+    </div>
+  </footer>
+</body>
+</html>
