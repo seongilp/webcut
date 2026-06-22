@@ -50,9 +50,13 @@
     .viewer-wrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; min-height: 0; padding: 8px; }
     .viewer-wrap video { max-width: 100%; max-height: 100%; border-radius: 4px; background: #000; }
     /* Live subtitle preview overlay, aligned to the rendered video frame */
-    .sub-overlay { position: absolute; display: flex; flex-direction: column; align-items: center; pointer-events: none; z-index: 5; gap: 6px; }
-    .sub-overlay .cap { display: inline-block; max-width: 92%; text-align: center; color: #fff; background: rgba(0,0,0,.5);
-      padding: .18em .5em; border-radius: 5px; line-height: 1.25; font-weight: 600; white-space: pre-wrap; text-shadow: 0 1px 2px #000a; }
+    .sub-overlay { position: absolute; pointer-events: none; z-index: 5; overflow: hidden; }
+    .sub-overlay .cap { position: absolute; transform: translate(-50%, -50%); display: inline-block; max-width: 92%;
+      text-align: center; color: #fff; background: rgba(0,0,0,.5); padding: .18em .5em; border-radius: 5px;
+      line-height: 1.25; font-weight: 600; white-space: pre-wrap; text-shadow: 0 1px 2px #000a;
+      pointer-events: auto; cursor: grab; user-select: none; }
+    .sub-overlay .cap:hover { outline: 1.5px dashed rgba(255,255,255,.6); outline-offset: 2px; }
+    .sub-overlay .cap.dragging { cursor: grabbing; outline: 1.5px solid var(--fc-blue); outline-offset: 2px; }
     .viewer-empty { color: var(--fc-muted); font-size: 13px; text-align: center; }
     .viewer-empty .big { font-size: 40px; margin-bottom: 8px; opacity: .5; }
 
@@ -250,11 +254,7 @@
             <div class="lbl">자막</div>
             <div id="subList"></div>
             <button class="fc-btn" id="addSub">＋ 자막 추가 (재생헤드 위치)</button>
-            <label class="insp-toggle">위치
-              <select id="subPos" class="sel-sm">
-                <option value="bottom">하단</option><option value="middle">중앙</option><option value="top">상단</option>
-              </select>
-            </label>
+            <div class="hint-sm">🖱 영상 위 자막을 <b style="color:var(--fc-text)">드래그</b>해 위치를 옮기세요.</div>
             <div class="hint-sm">⚠ 페이드·자막은 재인코딩이라 긴 영상은 느립니다. 짧은 구간에 권장.</div>
           </div>
 
@@ -600,20 +600,42 @@
       const scale = Math.min(cw/vw, ch/vh), w = vw*scale, h = vh*scale;
       return { left: video.offsetLeft + (cw - w)/2, top: video.offsetTop + (ch - h)/2, w, h };
     }
+    let draggingCap = false;
     function renderSubOverlay() {
       const ov = $('subOverlay'); if (!ov) return;
       updateSubActiveRows();
+      if (draggingCap) return;               // don't rebuild mid-drag
       const r = videoRect();
       const active = subs.filter(s => s.text.trim() && playN >= s.start && playN < s.end);
       if (!r || video.style.display === 'none' || !active.length) { ov.style.display = 'none'; return; }
-      const pos = $('subPos').value;
-      ov.style.display = 'flex';
-      ov.style.justifyContent = pos === 'top' ? 'flex-start' : pos === 'middle' ? 'center' : 'flex-end';
+      ov.style.display = 'block';
       ov.style.left = r.left + 'px'; ov.style.top = r.top + 'px'; ov.style.width = r.w + 'px'; ov.style.height = r.h + 'px';
-      ov.style.padding = (r.h * 0.05) + 'px ' + (r.w * 0.04) + 'px';
       const fs = Math.max(11, r.h / 16);
-      ov.innerHTML = active.map(s => `<span class="cap" style="font-size:${fs.toFixed(1)}px">${escHtml(s.text)}</span>`).join('');
-      updateSubActiveRows();
+      ov.innerHTML = '';
+      for (const s of active) {
+        const el = document.createElement('span');
+        el.className = 'cap'; el.style.fontSize = fs.toFixed(1) + 'px';
+        el.style.left = ((s.nx ?? 0.5) * 100) + '%'; el.style.top = ((s.ny ?? 0.9) * 100) + '%';
+        el.textContent = s.text; el.title = '드래그해서 위치 이동';
+        el.addEventListener('mousedown', ev => startCapDrag(ev, s, el));
+        ov.appendChild(el);
+      }
+    }
+    // Drag a caption around the video frame → updates its normalized nx/ny.
+    function startCapDrag(ev, s, el) {
+      ev.preventDefault(); ev.stopPropagation();
+      draggingCap = true; el.classList.add('dragging');
+      const move = e => {
+        const r = $('subOverlay').getBoundingClientRect();
+        s.nx = clamp((e.clientX - r.left) / r.width, 0.02, 0.98);
+        s.ny = clamp((e.clientY - r.top) / r.height, 0.04, 0.97);
+        el.style.left = (s.nx * 100) + '%'; el.style.top = (s.ny * 100) + '%';
+      };
+      const up = () => {
+        draggingCap = false; el.classList.remove('dragging');
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+      };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
     }
     // Toggle the inspector row highlight as the playhead enters/leaves each caption.
     function updateSubActiveRows() {
@@ -908,14 +930,14 @@
       const sd = seqDuration();
       if (sd <= 0) { log('먼저 타임라인에 클립을 올리세요.'); return; }
       const st = clamp(playN, 0, Math.max(0, sd - 0.5));
-      const s = { id: ++subSeq, start: st, end: Math.min(sd, st + 2), text: '' };
+      // nx/ny = normalized center of the caption within the video frame (drag to move).
+      const s = { id: ++subSeq, start: st, end: Math.min(sd, st + 2), text: '', nx: 0.5, ny: 0.9 };
       subs.push(s);
       renderSubs();
       // Auto-focus the new caption's text field so you can just start typing.
       const inp = $('subList').lastElementChild && $('subList').lastElementChild.querySelector('input.t');
       if (inp) { inp.focus(); }
     };
-    $('subPos').onchange = renderSubOverlay;
     function renderSubs() {
       const box = $('subList'); box.innerHTML = '';
       subs.forEach(s => {
@@ -957,11 +979,14 @@
       if (fadeOut > 0) { const st = Math.max(0, total - fadeOut).toFixed(3); vf.push(`fade=t=out:st=${st}:d=${fadeOut}`); af.push(`afade=t=out:st=${st}:d=${fadeOut}`); }
       if (useSubs.length) {
         await ensureFont();
-        const pos = $('subPos').value;
-        const y = pos === 'top' ? '48' : pos === 'middle' ? '(h-text_h)/2' : 'h-text_h-52';
         for (let i = 0; i < useSubs.length; i++) {
-          await ffmpeg.writeFile(`sub${i}.txt`, new TextEncoder().encode(useSubs[i].text));
-          vf.push(`drawtext=fontfile=font.otf:textfile=sub${i}.txt:expansion=none:fontcolor=white:fontsize=h/16:box=1:boxcolor=black@0.45:boxborderw=14:x=(w-text_w)/2:y=${y}:enable='between(t,${useSubs[i].start.toFixed(3)},${useSubs[i].end.toFixed(3)})'`);
+          const s = useSubs[i];
+          const nx = (s.nx ?? 0.5).toFixed(4), ny = (s.ny ?? 0.9).toFixed(4);
+          await ffmpeg.writeFile(`sub${i}.txt`, new TextEncoder().encode(s.text));
+          // nx/ny = normalized caption center → clamp so the box stays in frame.
+          const x = `max(0\\,min(w-text_w\\,w*${nx}-text_w/2))`;
+          const y = `max(0\\,min(h-text_h\\,h*${ny}-text_h/2))`;
+          vf.push(`drawtext=fontfile=font.otf:textfile=sub${i}.txt:expansion=none:fontcolor=white:fontsize=h/16:box=1:boxcolor=black@0.45:boxborderw=14:x=${x}:y=${y}:enable='between(t,${s.start.toFixed(3)},${s.end.toFixed(3)})'`);
         }
       }
       return { vf, af, count: useSubs.length };
