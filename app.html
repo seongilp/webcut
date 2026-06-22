@@ -47,8 +47,12 @@
     .src-card .m b { display: block; color: var(--fc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .src-card .m span { color: var(--fc-muted); }
 
-    .viewer-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; min-height: 0; padding: 8px; }
+    .viewer-wrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; min-height: 0; padding: 8px; }
     .viewer-wrap video { max-width: 100%; max-height: 100%; border-radius: 4px; background: #000; }
+    /* Live subtitle preview overlay, aligned to the rendered video frame */
+    .sub-overlay { position: absolute; display: flex; flex-direction: column; align-items: center; pointer-events: none; z-index: 5; gap: 6px; }
+    .sub-overlay .cap { display: inline-block; max-width: 92%; text-align: center; color: #fff; background: rgba(0,0,0,.5);
+      padding: .18em .5em; border-radius: 5px; line-height: 1.25; font-weight: 600; white-space: pre-wrap; text-shadow: 0 1px 2px #000a; }
     .viewer-empty { color: var(--fc-muted); font-size: 13px; text-align: center; }
     .viewer-empty .big { font-size: 40px; margin-bottom: 8px; opacity: .5; }
 
@@ -84,6 +88,7 @@
     .io-box input.num::-webkit-outer-spin-button, .io-box input.num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .sel-sm { margin-left: auto; background: var(--fc-panel-2); color: var(--fc-text); border: 1px solid var(--fc-line); border-radius: 6px; padding: 3px 7px; font-size: 12px; }
     .sub-row { background: var(--fc-panel-2); border: 1px solid var(--fc-line); border-radius: 7px; padding: 7px 8px; margin-bottom: 6px; }
+    .sub-row.active { border-color: var(--fc-blue); box-shadow: 0 0 0 1px var(--fc-blue) inset; }
     .sub-row input.t { width: 100%; background: #0e0f13; border: 1px solid var(--fc-line); border-radius: 5px; color: var(--fc-text); font-size: 12px; padding: 5px 7px; outline: none; }
     .sub-row input.t:focus { border-color: var(--fc-blue); }
     .sub-row .r { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
@@ -187,6 +192,7 @@
         <div class="viewer-wrap" id="viewerWrap">
           <div class="viewer-empty" id="viewerEmpty"><div class="big">🎬</div>영상을 가져오면 여기에 표시됩니다</div>
           <video id="video" style="display:none"></video>
+          <div class="sub-overlay" id="subOverlay" style="display:none"></div>
         </div>
         <div class="src-strip" id="srcStrip" title="소스 스크럽 · 드래그로 이동">
           <div class="film"></div>
@@ -488,7 +494,9 @@
     video.addEventListener('timeupdate', () => {
       $('curT').textContent = fmt(video.currentTime);
       if (mode === 'source') renderSrcPh();
+      renderSubOverlay();
     });
+    video.addEventListener('loadeddata', () => renderSubOverlay());
     video.addEventListener('play', () => $('playBtn').textContent = '⏸');
     video.addEventListener('pause', () => { if (!playingSeq) $('playBtn').textContent = '▶'; });
 
@@ -580,6 +588,39 @@
         const sc = $('tlScroll');
         if (x < sc.scrollLeft + 40 || x > sc.scrollLeft + sc.clientWidth - 40) sc.scrollLeft = x - sc.clientWidth/2;
       }
+      renderSubOverlay();
+    }
+
+    // ---- Live subtitle preview overlay (WYSIWYG) ----
+    const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // The rendered (letterboxed) video frame rect inside the viewer.
+    function videoRect() {
+      const vw = video.videoWidth, vh = video.videoHeight, cw = video.clientWidth, ch = video.clientHeight;
+      if (!vw || !vh || !cw || !ch) return null;
+      const scale = Math.min(cw/vw, ch/vh), w = vw*scale, h = vh*scale;
+      return { left: video.offsetLeft + (cw - w)/2, top: video.offsetTop + (ch - h)/2, w, h };
+    }
+    function renderSubOverlay() {
+      const ov = $('subOverlay'); if (!ov) return;
+      updateSubActiveRows();
+      const r = videoRect();
+      const active = subs.filter(s => s.text.trim() && playN >= s.start && playN < s.end);
+      if (!r || video.style.display === 'none' || !active.length) { ov.style.display = 'none'; return; }
+      const pos = $('subPos').value;
+      ov.style.display = 'flex';
+      ov.style.justifyContent = pos === 'top' ? 'flex-start' : pos === 'middle' ? 'center' : 'flex-end';
+      ov.style.left = r.left + 'px'; ov.style.top = r.top + 'px'; ov.style.width = r.w + 'px'; ov.style.height = r.h + 'px';
+      ov.style.padding = (r.h * 0.05) + 'px ' + (r.w * 0.04) + 'px';
+      const fs = Math.max(11, r.h / 16);
+      ov.innerHTML = active.map(s => `<span class="cap" style="font-size:${fs.toFixed(1)}px">${escHtml(s.text)}</span>`).join('');
+      updateSubActiveRows();
+    }
+    // Toggle the inspector row highlight as the playhead enters/leaves each caption.
+    function updateSubActiveRows() {
+      document.querySelectorAll('#subList .sub-row').forEach(row => {
+        const s = subs.find(x => x.id === +row.dataset.id);
+        row.classList.toggle('active', !!(s && s.text.trim() && playN >= s.start && playN < s.end));
+      });
     }
 
     // ---- Playhead scrub (ruler + head drag) ----
@@ -867,24 +908,35 @@
       const sd = seqDuration();
       if (sd <= 0) { log('먼저 타임라인에 클립을 올리세요.'); return; }
       const st = clamp(playN, 0, Math.max(0, sd - 0.5));
-      subs.push({ id: ++subSeq, start: st, end: Math.min(sd, st + 2), text: '자막' });
+      const s = { id: ++subSeq, start: st, end: Math.min(sd, st + 2), text: '' };
+      subs.push(s);
       renderSubs();
+      // Auto-focus the new caption's text field so you can just start typing.
+      const inp = $('subList').lastElementChild && $('subList').lastElementChild.querySelector('input.t');
+      if (inp) { inp.focus(); }
     };
+    $('subPos').onchange = renderSubOverlay;
     function renderSubs() {
       const box = $('subList'); box.innerHTML = '';
       subs.forEach(s => {
-        const row = document.createElement('div'); row.className = 'sub-row';
+        const isActive = s.text.trim() && playN >= s.start && playN < s.end;
+        const row = document.createElement('div'); row.className = 'sub-row' + (isActive ? ' active' : ''); row.dataset.id = s.id;
         row.innerHTML = `<input class="t" value="${escAttr(s.text)}" placeholder="자막 텍스트" />
           <div class="r"><span class="m">${fmt(s.start)}–${fmt(s.end)}</span><span class="sp"></span>
           <button data-in title="시작점=재생헤드">⊙ 시작</button>
           <button data-out title="끝점=재생헤드">⊙ 끝</button>
           <button data-del title="삭제">✕</button></div>`;
-        row.querySelector('input.t').oninput = e => { s.text = e.target.value; };
-        row.querySelector('[data-in]').onclick = () => { s.start = clamp(playN, 0, s.end - 0.1); renderSubs(); };
-        row.querySelector('[data-out]').onclick = () => { s.end = clamp(playN, s.start + 0.1, seqDuration()); renderSubs(); };
-        row.querySelector('[data-del]').onclick = () => { subs = subs.filter(x => x.id !== s.id); renderSubs(); };
+        const input = row.querySelector('input.t');
+        input.oninput = e => { s.text = e.target.value; renderSubOverlay(); };
+        // Click the time label to jump the playhead to this caption (preview it).
+        row.querySelector('.m').style.cursor = 'pointer';
+        row.querySelector('.m').onclick = () => seekSeq(s.start);
+        row.querySelector('[data-in]').onclick = () => { s.start = clamp(playN, 0, s.end - 0.1); renderSubs(); renderSubOverlay(); };
+        row.querySelector('[data-out]').onclick = () => { s.end = clamp(playN, s.start + 0.1, seqDuration()); renderSubs(); renderSubOverlay(); };
+        row.querySelector('[data-del]').onclick = () => { subs = subs.filter(x => x.id !== s.id); renderSubs(); renderSubOverlay(); };
         box.appendChild(row);
       });
+      renderSubOverlay();
     }
     async function ensureFont() {
       if (fontLoaded) return;
@@ -986,7 +1038,7 @@
       finally { $('export').disabled = clips.length === 0; }
     };
 
-    window.addEventListener('resize', () => { if (clips.length) renderTimeline(); });
+    window.addEventListener('resize', () => { if (clips.length) renderTimeline(); renderSubOverlay(); });
     renderTimeline();
   </script>
 </body>
