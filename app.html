@@ -101,6 +101,14 @@
     .sub-row .r button { font-size: 10.5px; padding: 3px 7px; border: 1px solid var(--fc-line); background: var(--fc-bg); color: var(--fc-text); border-radius: 5px; cursor: pointer; }
     .sub-row .r button:hover { border-color: var(--fc-blue); }
     .hint-sm { font-size: 10.5px; color: var(--fc-muted); margin-top: 8px; line-height: 1.45; }
+    .sel-full { width: 100%; margin-top: 3px; background: var(--fc-panel-2); color: var(--fc-text); border: 1px solid var(--fc-line); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+    .color-in { width: 100%; height: 26px; margin-top: 3px; padding: 0; border: 1px solid var(--fc-line); border-radius: 6px; background: var(--fc-panel-2); cursor: pointer; }
+    .color-in::-webkit-color-swatch-wrapper { padding: 2px; } .color-in::-webkit-color-swatch { border: none; border-radius: 4px; }
+    /* image layer on the viewer overlay */
+    .sub-overlay .lay-img { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; user-select: none; -webkit-user-drag: none; }
+    .sub-overlay .lay-img.dragging { cursor: grabbing; outline: 1.5px solid var(--fc-blue); }
+    .sub-overlay .lay-img:hover { outline: 1.5px dashed rgba(255,255,255,.6); }
+    .sub-overlay .lay-h { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--fc-blue); border: 2px solid #fff; transform: translate(-50%, -50%); pointer-events: auto; cursor: nwse-resize; z-index: 6; }
 
     /* Timeline */
     .fc-timeline { border-top: 1px solid var(--fc-line); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: #18191c; }
@@ -254,8 +262,23 @@
             <div class="lbl">자막</div>
             <div id="subList"></div>
             <button class="fc-btn" id="addSub">＋ 자막 추가 (재생헤드 위치)</button>
+            <div class="io-row" style="margin-top:8px">
+              <div class="io-box"><div class="k">크기</div>
+                <select id="subSize" class="sel-full"><option value="0.72">작게</option><option value="1" selected>보통</option><option value="1.4">크게</option><option value="1.9">아주크게</option></select></div>
+              <div class="io-box" style="flex:0 0 52px"><div class="k">색</div><input id="subColor" type="color" value="#ffffff" class="color-in"></div>
+              <div class="io-box"><div class="k">배경</div>
+                <select id="subBg" class="sel-full"><option value="box" selected>박스</option><option value="outline">외곽선</option><option value="none">없음</option></select></div>
+            </div>
             <div class="hint-sm">🖱 영상 위 자막을 <b style="color:var(--fc-text)">드래그</b>해 위치를 옮기세요.</div>
-            <div class="hint-sm">⚠ 페이드·자막은 재인코딩이라 긴 영상은 느립니다. 짧은 구간에 권장.</div>
+          </div>
+
+          <div class="insp-sec">
+            <div class="lbl">이미지 레이어 (PNG · JPG)</div>
+            <div id="imgList"></div>
+            <button class="fc-btn" id="addImg">＋ 이미지 추가 (재생헤드 위치)</button>
+            <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" style="display:none">
+            <div class="hint-sm">🖱 드래그로 이동, 모서리 핸들로 크기 조절. 로고·스티커·지도 등.</div>
+            <div class="hint-sm">⚠ 페이드·자막·이미지는 재인코딩이라 긴 영상은 느립니다. 짧은 구간에 권장.</div>
           </div>
 
           <div class="insp-sec">
@@ -601,42 +624,79 @@
       return { left: video.offsetLeft + (cw - w)/2, top: video.offsetTop + (ch - h)/2, w, h };
     }
     let draggingCap = false;
+    function capStyle(el, fs) {
+      const size = parseFloat($('subSize').value) || 1, color = $('subColor').value, bg = $('subBg').value;
+      const px = Math.max(11, fs * size);
+      el.style.fontSize = px.toFixed(1) + 'px'; el.style.color = color;
+      if (bg === 'box') { el.style.background = 'rgba(0,0,0,.5)'; el.style.padding = '.18em .5em'; el.style.webkitTextStroke = '0'; el.style.textShadow = '0 1px 2px #000a'; }
+      else if (bg === 'outline') { el.style.background = 'transparent'; el.style.padding = '0'; el.style.webkitTextStroke = Math.max(1, px * 0.07).toFixed(1) + 'px #000'; el.style.paintOrder = 'stroke fill'; el.style.textShadow = 'none'; }
+      else { el.style.background = 'transparent'; el.style.padding = '0'; el.style.webkitTextStroke = '0'; el.style.textShadow = '0 2px 5px #000d, 0 0 2px #000'; }
+    }
     function renderSubOverlay() {
       const ov = $('subOverlay'); if (!ov) return;
       updateSubActiveRows();
       if (draggingCap) return;               // don't rebuild mid-drag
       const r = videoRect();
-      const active = subs.filter(s => s.text.trim() && playN >= s.start && playN < s.end);
-      if (!r || video.style.display === 'none' || !active.length) { ov.style.display = 'none'; return; }
+      const aSubs = subs.filter(s => s.text.trim() && playN >= s.start && playN < s.end);
+      const aImgs = imgs.filter(im => playN >= im.start && playN < im.end);
+      if (!r || video.style.display === 'none' || (!aSubs.length && !aImgs.length)) { ov.style.display = 'none'; return; }
       ov.style.display = 'block';
       ov.style.left = r.left + 'px'; ov.style.top = r.top + 'px'; ov.style.width = r.w + 'px'; ov.style.height = r.h + 'px';
-      const fs = Math.max(11, r.h / 16);
       ov.innerHTML = '';
-      for (const s of active) {
+      const fs = r.h / 16;
+      // image layers (under captions)
+      for (const im of aImgs) {
+        const img = document.createElement('img');
+        img.className = 'lay-img'; img.src = im.url; img.draggable = false;
+        const wpx = im.scale * r.w, hpx = wpx * (im.h / im.w);
+        img.style.left = (im.nx * 100) + '%'; img.style.top = (im.ny * 100) + '%'; img.style.width = wpx + 'px';
+        const handle = document.createElement('span'); handle.className = 'lay-h';
+        handle.style.left = (im.nx * r.w + wpx / 2) + 'px'; handle.style.top = (im.ny * r.h + hpx / 2) + 'px';
+        img.addEventListener('mousedown', ev => startLayerDrag(ev, im, img, handle));
+        handle.addEventListener('mousedown', ev => startImgResize(ev, im, img, handle));
+        ov.appendChild(img); ov.appendChild(handle);
+      }
+      // captions (on top)
+      for (const s of aSubs) {
         const el = document.createElement('span');
-        el.className = 'cap'; el.style.fontSize = fs.toFixed(1) + 'px';
+        el.className = 'cap'; capStyle(el, fs);
         el.style.left = ((s.nx ?? 0.5) * 100) + '%'; el.style.top = ((s.ny ?? 0.9) * 100) + '%';
         el.textContent = s.text; el.title = '드래그해서 위치 이동';
-        el.addEventListener('mousedown', ev => startCapDrag(ev, s, el));
+        el.addEventListener('mousedown', ev => startLayerDrag(ev, s, el, null));
         ov.appendChild(el);
       }
     }
-    // Drag a caption around the video frame → updates its normalized nx/ny.
-    function startCapDrag(ev, s, el) {
+    // Drag any layer (caption or image) → updates its normalized nx/ny.
+    function startLayerDrag(ev, layer, el, handle) {
       ev.preventDefault(); ev.stopPropagation();
       draggingCap = true; el.classList.add('dragging');
       const move = e => {
         const r = $('subOverlay').getBoundingClientRect();
-        s.nx = clamp((e.clientX - r.left) / r.width, 0.02, 0.98);
-        s.ny = clamp((e.clientY - r.top) / r.height, 0.04, 0.97);
-        el.style.left = (s.nx * 100) + '%'; el.style.top = (s.ny * 100) + '%';
+        layer.nx = clamp((e.clientX - r.left) / r.width, 0.02, 0.98);
+        layer.ny = clamp((e.clientY - r.top) / r.height, 0.02, 0.98);
+        el.style.left = (layer.nx * 100) + '%'; el.style.top = (layer.ny * 100) + '%';
+        if (handle) { const wpx = el.offsetWidth, hpx = el.offsetHeight; handle.style.left = (layer.nx * r.width + wpx / 2) + 'px'; handle.style.top = (layer.ny * r.height + hpx / 2) + 'px'; }
       };
-      const up = () => {
-        draggingCap = false; el.classList.remove('dragging');
-        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
-      };
+      const up = () => { draggingCap = false; el.classList.remove('dragging'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
       window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
     }
+    // Resize an image layer via its corner handle → updates scale (fraction of video width).
+    function startImgResize(ev, im, img, handle) {
+      ev.preventDefault(); ev.stopPropagation();
+      draggingCap = true;
+      const move = e => {
+        const r = $('subOverlay').getBoundingClientRect();
+        const cx = r.left + im.nx * r.width;
+        im.scale = clamp((2 * Math.abs(e.clientX - cx)) / r.width, 0.03, 2);
+        const wpx = im.scale * r.width, hpx = wpx * (im.h / im.w);
+        img.style.width = wpx + 'px';
+        handle.style.left = (im.nx * r.width + wpx / 2) + 'px'; handle.style.top = (im.ny * r.height + hpx / 2) + 'px';
+      };
+      const up = () => { draggingCap = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    }
+    // Subtitle style controls re-render the live preview.
+    ['subSize','subColor','subBg'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', renderSubOverlay); });
     // Toggle the inspector row highlight as the playhead enters/leaves each caption.
     function updateSubActiveRows() {
       document.querySelectorAll('#subList .sub-row').forEach(row => {
@@ -923,6 +983,36 @@
 
     // ---- Subtitles (자막) ----
     let subs = [], subSeq = 0, fontLoaded = false;
+    let imgs = [], imgSeq = 0;
+
+    // ---- Image layers (PNG/JPG overlays) ----
+    $('addImg').onclick = () => { if (seqDuration() <= 0) { log('먼저 타임라인에 클립을 올리세요.'); return; } $('imgFile').click(); };
+    $('imgFile').onchange = e => {
+      const f = e.target.files[0]; if (!f) return;
+      const url = URL.createObjectURL(f), probe = new Image();
+      probe.onload = () => {
+        const sd = seqDuration(), st = clamp(playN, 0, Math.max(0, sd - 0.5));
+        imgs.push({ id: ++imgSeq, file: f, url, name: f.name, ext: (f.name.split('.').pop() || 'png').toLowerCase(),
+          w: probe.naturalWidth, h: probe.naturalHeight, start: st, end: Math.min(sd, st + 3), nx: 0.5, ny: 0.4, scale: 0.3 });
+        renderImgList(); renderSubOverlay();
+      };
+      probe.src = url; e.target.value = '';
+    };
+    function renderImgList() {
+      const box = $('imgList'); box.innerHTML = '';
+      imgs.forEach(im => {
+        const row = document.createElement('div'); row.className = 'sub-row'; row.dataset.imgid = im.id;
+        row.innerHTML = `<div style="display:flex;align-items:center;gap:8px">
+            <img src="${im.url}" style="width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid var(--fc-line);flex:none">
+            <div style="font-size:11px;min-width:0"><b style="display:block;color:var(--fc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(im.name)}</b><span class="m" style="color:var(--fc-muted);cursor:pointer;font-variant-numeric:tabular-nums">${fmt(im.start)}–${fmt(im.end)}</span></div></div>
+          <div class="r"><span class="sp"></span><button data-in title="시작=재생헤드">⊙ 시작</button><button data-out title="끝=재생헤드">⊙ 끝</button><button data-del title="삭제">✕</button></div>`;
+        row.querySelector('.m').onclick = () => seekSeq(im.start);
+        row.querySelector('[data-in]').onclick = () => { im.start = clamp(playN, 0, im.end - 0.1); renderImgList(); renderSubOverlay(); };
+        row.querySelector('[data-out]').onclick = () => { im.end = clamp(playN, im.start + 0.1, seqDuration()); renderImgList(); renderSubOverlay(); };
+        row.querySelector('[data-del]').onclick = () => { imgs = imgs.filter(x => x.id !== im.id); renderImgList(); renderSubOverlay(); };
+        box.appendChild(row);
+      });
+    }
     const FONT_URL = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Regular.otf';
     const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -973,23 +1063,29 @@
       const fadeIn = Math.max(0, parseFloat($('fadeIn').value) || 0);
       const fadeOut = Math.max(0, Math.min(total, parseFloat($('fadeOut').value) || 0));
       const useSubs = subs.filter(s => s.text.trim() && s.end > s.start);
-      if (fadeIn <= 0 && fadeOut <= 0 && useSubs.length === 0) return null;
+      const useImgs = imgs.filter(im => im.end > im.start);
+      if (fadeIn <= 0 && fadeOut <= 0 && useSubs.length === 0 && useImgs.length === 0) return null;
       const vf = [], af = [];
       if (fadeIn > 0) { vf.push(`fade=t=in:st=0:d=${fadeIn}`); af.push(`afade=t=in:st=0:d=${fadeIn}`); }
       if (fadeOut > 0) { const st = Math.max(0, total - fadeOut).toFixed(3); vf.push(`fade=t=out:st=${st}:d=${fadeOut}`); af.push(`afade=t=out:st=${st}:d=${fadeOut}`); }
       if (useSubs.length) {
         await ensureFont();
+        const size = parseFloat($('subSize').value) || 1;
+        const colorHex = '0x' + ($('subColor').value.replace('#', ''));
+        const bgMode = $('subBg').value;
+        const bgPart = bgMode === 'box' ? 'box=1:boxcolor=black@0.45:boxborderw=14'
+          : bgMode === 'outline' ? `borderw=${Math.max(2, Math.round(size * 4))}:bordercolor=black`
+          : 'shadowcolor=black@0.8:shadowx=2:shadowy=2';
         for (let i = 0; i < useSubs.length; i++) {
           const s = useSubs[i];
           const nx = (s.nx ?? 0.5).toFixed(4), ny = (s.ny ?? 0.9).toFixed(4);
           await ffmpeg.writeFile(`sub${i}.txt`, new TextEncoder().encode(s.text));
-          // nx/ny = normalized caption center → clamp so the box stays in frame.
           const x = `max(0\\,min(w-text_w\\,w*${nx}-text_w/2))`;
           const y = `max(0\\,min(h-text_h\\,h*${ny}-text_h/2))`;
-          vf.push(`drawtext=fontfile=font.otf:textfile=sub${i}.txt:expansion=none:fontcolor=white:fontsize=h/16:box=1:boxcolor=black@0.45:boxborderw=14:x=${x}:y=${y}:enable='between(t,${s.start.toFixed(3)},${s.end.toFixed(3)})'`);
+          vf.push(`drawtext=fontfile=font.otf:textfile=sub${i}.txt:expansion=none:fontcolor=${colorHex}:fontsize=h/16*${size}:${bgPart}:x=${x}:y=${y}:enable='between(t,${s.start.toFixed(3)},${s.end.toFixed(3)})'`);
         }
       }
-      return { vf, af, count: useSubs.length };
+      return { vf, af, count: useSubs.length, imgs: useImgs };
     }
 
     // ---- Export ----
@@ -1036,10 +1132,32 @@
           const fx = await buildEffects(seqDuration());
           let finalName = outName;
           if (fx) {
-            log('효과 적용(재인코딩) 중…' + (fx.count ? ` · 자막 ${fx.count}개` : ''));
+            log('효과 적용(재인코딩) 중…' + (fx.count ? ` · 자막 ${fx.count}` : '') + (fx.imgs.length ? ` · 이미지 ${fx.imgs.length}` : ''));
             const eargs = ['-i', outName];
-            if (fx.vf.length) eargs.push('-vf', fx.vf.join(','));
-            if (fx.af.length) eargs.push('-af', fx.af.join(','));
+            if (!fx.imgs.length) {
+              // No image overlays → simple -vf/-af pass.
+              if (fx.vf.length) eargs.push('-vf', fx.vf.join(','));
+              if (fx.af.length) eargs.push('-af', fx.af.join(','));
+            } else {
+              // Image overlays need filter_complex with extra inputs.
+              const W = video.videoWidth || 1280;
+              for (let i = 0; i < fx.imgs.length; i++) {
+                await ffmpeg.writeFile(`lay${i}.${fx.imgs[i].ext}`, await fetchFile(fx.imgs[i].file));
+                eargs.push('-i', `lay${i}.${fx.imgs[i].ext}`);
+              }
+              const parts = [];
+              let label = '[0:v]';
+              if (fx.vf.length) { parts.push(`[0:v]${fx.vf.join(',')}[vb]`); label = '[vb]'; }
+              fx.imgs.forEach((im, i) => {
+                const tw = Math.max(2, Math.round(im.scale * W));
+                parts.push(`[${i + 1}:v]scale=${tw}:-1[img${i}]`);
+                const nx = im.nx.toFixed(4), ny = im.ny.toFixed(4);
+                parts.push(`${label}[img${i}]overlay=x=(main_w*${nx}-overlay_w/2):y=(main_h*${ny}-overlay_h/2):enable='between(t\\,${im.start.toFixed(3)}\\,${im.end.toFixed(3)})'[v${i}]`);
+                label = `[v${i}]`;
+              });
+              if (fx.af.length) parts.push(`[0:a]${fx.af.join(',')}[aout]`);
+              eargs.push('-filter_complex', parts.join(';'), '-map', label, '-map', fx.af.length ? '[aout]' : '0:a?');
+            }
             eargs.push('-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p');
             eargs.push('-c:a', fx.af.length ? 'aac' : 'copy');
             eargs.push('-movflags', '+faststart', 'final.mp4');
