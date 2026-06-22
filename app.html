@@ -363,24 +363,58 @@
     function fixSelection() { if (!clips.find(c => c.id === selectedId)) selectedId = clips.length ? clips[clips.length - 1].id : null; }
 
     // ---- FFmpeg ----
-    const ffmpeg = new FFmpeg();
-    let loaded = false, loadPromise = null, mountSeq = 0;
-    ffmpeg.on('log', ({ message }) => { if (message && message !== 'Aborted()') log(message); });
-    ffmpeg.on('progress', ({ progress }) => { if (progress >= 0 && progress <= 1) bar.style.width = (progress*100).toFixed(1) + '%'; });
-    // Memoized so concurrent callers (import + export) share ONE core download;
-    // resets on failure so a flaky CDN fetch can be retried.
+    let ffmpeg = new FFmpeg();
+    let loaded = false, loadPromise = null, mountSeq = 0, usingMT = false;
+    // Cross-origin isolated (COOP+COEP) → SharedArrayBuffer → multi-threaded core is possible.
+    const COI = (typeof crossOriginIsolated !== 'undefined') && crossOriginIsolated && (typeof SharedArrayBuffer === 'function');
+    function attachFF(ff) {
+      ff.on('log', ({ message }) => { if (message && message !== 'Aborted()') log(message); });
+      ff.on('progress', ({ progress }) => { if (progress >= 0 && progress <= 1) bar.style.width = (progress*100).toFixed(1) + '%'; });
+    }
+    attachFF(ffmpeg);
+    async function loadCore(mt) {
+      const base = `https://unpkg.com/@ffmpeg/${mt ? 'core-mt' : 'core'}@0.12.10/dist/esm`;
+      const cfg = {
+        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+      };
+      if (mt) cfg.workerURL = await toBlobURL(`${base}/ffmpeg-core.worker.js`, 'text/javascript');
+      await ffmpeg.load(cfg);
+    }
+    // Tiny timed libx264 encode. Multi-thread cores can deadlock on x264 in some
+    // browsers; if the probe stalls we fall back to the rock-solid single-thread core.
+    async function probeEncode() {
+      return Promise.race([
+        ffmpeg.exec(['-f','lavfi','-i','testsrc=size=64x64:rate=5:duration=0.4','-c:v','libx264','-preset','ultrafast','-frames:v','2','-y','probe.mp4']).then(() => true).catch(() => false),
+        new Promise(r => setTimeout(() => r('timeout'), 8000)),
+      ]);
+    }
+    // Memoized so concurrent callers (import + export) share ONE core download.
     function ensureLoaded() {
       if (loaded) return Promise.resolve();
       if (loadPromise) return loadPromise;
       loadPromise = (async () => {
         statusEl.textContent = 'FFmpeg 로딩…'; statusEl.className = 'pill busy';
-        log('FFmpeg 코어 다운로드 중 (최초 1회, ~25MB)…');
-        const base = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
-        await ffmpeg.load({
-          coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
-          wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
-        loaded = true; statusEl.textContent = 'FFmpeg 준비됨'; statusEl.className = 'pill ok'; log('FFmpeg 엔진 준비 완료 ✓');
+        if (COI) {
+          log('FFmpeg 멀티스레드 코어 로드 중 (최초 1회)…');
+          await loadCore(true);
+          log('멀티스레드 인코딩 점검 중…');
+          const ok = await probeEncode();
+          if (ok === true) { usingMT = true; }
+          else {
+            log('멀티스레드 인코딩이 동작하지 않아 단일스레드로 전환합니다.');
+            try { ffmpeg.terminate(); } catch (_) {}
+            ffmpeg = new FFmpeg(); attachFF(ffmpeg);
+            await loadCore(false); usingMT = false;
+          }
+        } else {
+          log('FFmpeg 단일스레드 코어 로드 중 (최초 1회)…');
+          await loadCore(false); usingMT = false;
+        }
+        try { await ffmpeg.deleteFile('probe.mp4'); } catch (_) {}
+        loaded = true;
+        statusEl.textContent = usingMT ? 'FFmpeg 준비됨 · MT' : 'FFmpeg 준비됨'; statusEl.className = 'pill ok';
+        log(`FFmpeg 준비 완료 ✓ (${usingMT ? '멀티스레드' : '단일스레드'})`);
       })().catch(e => { loadPromise = null; throw e; });
       return loadPromise;
     }

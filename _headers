@@ -1,0 +1,4 @@
+# Cross-origin isolation → enables SharedArrayBuffer → multi-threaded FFmpeg.wasm
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
