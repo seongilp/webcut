@@ -132,8 +132,20 @@
     .tl-ruler { height: 22px; position: relative; border-bottom: 1px solid var(--fc-line); background: #1a1b1e; cursor: text; user-select: none; }
     .tl-ruler .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #2c2d32; padding-left: 4px; font-size: 9px; color: var(--fc-muted); line-height: 22px; pointer-events: none; }
     .tl-ruler .mk { position: absolute; top: 2px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--fc-sel); transform: translateX(-5px); cursor: pointer; }
-    .tl-track { position: relative; height: calc(100% - 22px); padding: 12px 0; }
-    .tl-lane { position: relative; height: 100%; }
+    .tl-track { position: relative; height: calc(100% - 22px); padding: 12px 0; display: flex; flex-direction: column; }
+    .tl-lane { position: relative; flex: 1; min-height: 40px; }
+    /* Layer track (subtitles + image overlays) below the clips */
+    .tl-olanes { flex: none; margin-top: 4px; }
+    .tl-olane { position: relative; height: 17px; margin-top: 3px; }
+    .tl-olane .lane-tag { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); font-size: 8.5px; color: var(--fc-muted2, #686c79); pointer-events: none; z-index: 1; }
+    .tl-oblk { position: absolute; top: 0; bottom: 0; border-radius: 4px; cursor: grab; overflow: hidden; box-shadow: inset 0 1px 0 #ffffff22; min-width: 8px; }
+    .tl-oblk .lbl { padding: 2px 8px; font-size: 9px; color: #fff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 1px #0008; }
+    .tl-oblk.sub { background: linear-gradient(#2f9e6e, #247a55); border: 1px solid #00000066; }
+    .tl-oblk.img { background: linear-gradient(#7a5cff, #5e44cc); border: 1px solid #00000066; }
+    .tl-oblk.sel { outline: 2px solid var(--fc-sel); outline-offset: -1px; }
+    .tl-oblk .trim { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 2; }
+    .tl-oblk .trim.l { left: 0; } .tl-oblk .trim.r { right: 0; }
+    .tl-oblk .trim:hover { background: var(--fc-sel); opacity: .6; }
     .tl-clip { position: absolute; top: 8px; bottom: 8px; border-radius: 6px; overflow: hidden; background: var(--fc-clip); border: 1px solid #00000077; cursor: grab; box-shadow: inset 0 1px 0 #ffffff22; min-width: 14px; }
     .tl-clip .cbar { height: 5px; background: var(--fc-clip-top); opacity: .85; }
     .tl-clip .cbody { position: absolute; inset: 5px 0 0 0; background-image: repeating-linear-gradient(90deg,#ffffff10 0 1px,#0000 1px 14px); }
@@ -325,6 +337,10 @@
           <div class="tl-track">
             <div class="tl-lane" id="lane">
               <div class="tl-empty" id="tlEmpty">여기에 클립이 마그네틱하게 이어붙습니다. 인스펙터에서 구간을 정하고 <b style="color:var(--fc-text);margin:0 4px">＋ 추가</b>하세요.</div>
+            </div>
+            <div class="tl-olanes" id="olanes" style="display:none">
+              <div class="tl-olane" id="laneImg"><span class="lane-tag">IMG</span></div>
+              <div class="tl-olane" id="laneSub"><span class="lane-tag">자막</span></div>
             </div>
           </div>
           <div class="tl-range" id="tlRange"></div>
@@ -900,7 +916,7 @@
       if (selA != null && selA > total) selA = total;
       if (selB != null && selB > total) selB = total;
       document.querySelector('.tl-track').classList.toggle('range-tool', tool === 'range');
-      updatePlayhead(); renderRange(); bindClipEvents(); renderSelectionInspector();
+      updatePlayhead(); renderRange(); bindClipEvents(); renderSelectionInspector(); renderLayerTrack();
     }
 
     // ---- Clip events: select, delete, trim, drag-reorder ----
@@ -1012,7 +1028,50 @@
         row.querySelector('[data-del]').onclick = () => { imgs = imgs.filter(x => x.id !== im.id); renderImgList(); renderSubOverlay(); };
         box.appendChild(row);
       });
+      renderLayerTrack();
     }
+
+    // ---- Layer track on the timeline (subtitles + images as draggable blocks) ----
+    let selLayerKey = null;   // `${kind}:${id}`
+    function renderLayerTrack() {
+      const laneImg = $('laneImg'), laneSub = $('laneSub'), olanes = $('olanes');
+      if (!laneImg) return;
+      olanes.style.display = (subs.length || imgs.length) ? 'block' : 'none';
+      laneImg.querySelectorAll('.tl-oblk').forEach(n => n.remove());
+      laneSub.querySelectorAll('.tl-oblk').forEach(n => n.remove());
+      imgs.forEach(im => laneImg.appendChild(makeOBlk(im, 'img', im.name)));
+      subs.forEach(s => laneSub.appendChild(makeOBlk(s, 'sub', s.text || '자막')));
+    }
+    function makeOBlk(layer, kind, label) {
+      const el = document.createElement('div');
+      el.className = 'tl-oblk ' + kind + (selLayerKey === kind + ':' + layer.id ? ' sel' : '');
+      el.style.left = (layer.start * PXPS) + 'px';
+      el.style.width = Math.max(8, (layer.end - layer.start) * PXPS - 1) + 'px';
+      el.innerHTML = `<div class="trim l"></div><div class="lbl">${escHtml(label)}</div><div class="trim r"></div>`;
+      el.title = '드래그: 위치 이동 · 양 끝: 길이 조절';
+      const sel = () => { selLayerKey = kind + ':' + layer.id; seekSeq(layer.start); };
+      el.addEventListener('mousedown', ev => { if (ev.target.classList.contains('trim')) return; ev.stopPropagation(); sel(); startOBlkDrag(ev, layer, 'move'); });
+      el.querySelector('.trim.l').addEventListener('mousedown', ev => { ev.stopPropagation(); sel(); startOBlkDrag(ev, layer, 'l'); });
+      el.querySelector('.trim.r').addEventListener('mousedown', ev => { ev.stopPropagation(); sel(); startOBlkDrag(ev, layer, 'r'); });
+      return el;
+    }
+    function startOBlkDrag(ev, layer, mode) {
+      ev.preventDefault();
+      const startX = ev.clientX, o = { start: layer.start, end: layer.end }, dur = o.end - o.start, sd = seqDuration();
+      const move = e => {
+        const dt = (e.clientX - startX) / PXPS;
+        if (mode === 'move') { const ns = clamp(o.start + dt, 0, Math.max(0, sd - dur)); layer.start = ns; layer.end = ns + dur; }
+        else if (mode === 'l') layer.start = clamp(o.start + dt, 0, layer.end - 0.1);
+        else layer.end = clamp(o.end + dt, layer.start + 0.1, sd);
+        renderLayerTrack();
+      };
+      const up = () => {
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+        renderSubs(); renderImgList(); renderSubOverlay();   // sync inspector + preview
+      };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    }
+
     const FONT_URL = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Regular.otf';
     const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -1048,7 +1107,7 @@
         row.querySelector('[data-del]').onclick = () => { subs = subs.filter(x => x.id !== s.id); renderSubs(); renderSubOverlay(); };
         box.appendChild(row);
       });
-      renderSubOverlay();
+      renderSubOverlay(); renderLayerTrack();
     }
     async function ensureFont() {
       if (fontLoaded) return;
