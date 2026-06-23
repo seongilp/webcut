@@ -101,6 +101,10 @@
     .sub-row .r button { font-size: 10.5px; padding: 3px 7px; border: 1px solid var(--fc-line); background: var(--fc-bg); color: var(--fc-text); border-radius: 5px; cursor: pointer; }
     .sub-row .r button:hover { border-color: var(--fc-blue); }
     .hint-sm { font-size: 10.5px; color: var(--fc-muted); margin-top: 8px; line-height: 1.45; }
+    .trans-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .trans-row .tn { font-size: 11px; color: var(--fc-muted); white-space: nowrap; min-width: 70px; }
+    .trans-row .tt { flex: 1; }
+    .trans-row .num { width: 44px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); color: var(--fc-text); border-radius: 6px; padding: 4px; font-size: 12px; }
     .sel-full { width: 100%; margin-top: 3px; background: var(--fc-panel-2); color: var(--fc-text); border: 1px solid var(--fc-line); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
     .color-in { width: 100%; height: 26px; margin-top: 3px; padding: 0; border: 1px solid var(--fc-line); border-radius: 6px; background: var(--fc-panel-2); cursor: pointer; }
     .color-in::-webkit-color-swatch-wrapper { padding: 2px; } .color-in::-webkit-color-swatch { border: none; border-radius: 4px; }
@@ -268,6 +272,12 @@
               <div class="io-box"><div class="k">페이드 인 (초)</div><input class="num" id="fadeIn" type="number" min="0" step="0.1" value="0"></div>
               <div class="io-box"><div class="k">페이드 아웃 (초)</div><input class="num" id="fadeOut" type="number" min="0" step="0.1" value="0"></div>
             </div>
+          </div>
+
+          <div class="insp-sec" id="transSec" style="display:none">
+            <div class="lbl">전환 (클립 사이)</div>
+            <div id="transList"></div>
+            <div class="hint-sm">전환을 넣으면 그 구간은 재인코딩됩니다.</div>
           </div>
 
           <div class="insp-sec">
@@ -916,7 +926,7 @@
       if (selA != null && selA > total) selA = total;
       if (selB != null && selB > total) selB = total;
       document.querySelector('.tl-track').classList.toggle('range-tool', tool === 'range');
-      updatePlayhead(); renderRange(); bindClipEvents(); renderSelectionInspector(); renderLayerTrack();
+      updatePlayhead(); renderRange(); bindClipEvents(); renderSelectionInspector(); renderLayerTrack(); renderTransitions();
     }
 
     // ---- Clip events: select, delete, trim, drag-reorder ----
@@ -1072,6 +1082,23 @@
       window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
     }
 
+    // ---- Transitions between adjacent clips (stored on clip.transIn) ----
+    const TRANS_TYPES = [['none','없음'],['fade','디졸브'],['fadeblack','검정 페이드'],['fadewhite','흰색 페이드'],['slideleft','슬라이드 ←'],['slideright','슬라이드 →'],['wipeleft','와이프 ←'],['circleopen','원형']];
+    function renderTransitions() {
+      const sec = $('transSec'), box = $('transList'); if (!sec) return;
+      if (clips.length < 2) { sec.style.display = 'none'; return; }
+      sec.style.display = 'block'; box.innerHTML = '';
+      for (let i = 1; i < clips.length; i++) {
+        const c = clips[i]; if (!c.transIn) c.transIn = { type: 'none', dur: 0.5 };
+        const row = document.createElement('div'); row.className = 'trans-row';
+        const opts = TRANS_TYPES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+        row.innerHTML = `<span class="tn">클립 ${i}→${i + 1}</span><select class="sel-full tt">${opts}</select><input class="num td" type="number" min="0.1" max="3" step="0.1" value="${c.transIn.dur}">`;
+        const ts = row.querySelector('.tt'); ts.value = c.transIn.type; ts.onchange = () => { c.transIn.type = ts.value; };
+        const td = row.querySelector('.td'); td.oninput = () => { c.transIn.dur = clamp(parseFloat(td.value) || 0.5, 0.1, 3); };
+        box.appendChild(row);
+      }
+    }
+
     const FONT_URL = 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Regular.otf';
     const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -1179,12 +1206,34 @@
             args.push(part);
             log(`클립 ${i+1}/${clips.length} 자르는 중…`); await ffmpeg.exec(args); parts.push(part);
           }
+          const hasTrans = clips.slice(1).some(c => c.transIn && c.transIn.type && c.transIn.type !== 'none');
+          const cd = i => clips[i].end - clips[i].start;
           let outName;
           if (parts.length === 1) outName = parts[0];
-          else {
+          else if (!hasTrans) {
             await ffmpeg.writeFile('list.txt', new TextEncoder().encode(parts.map(p => `file '${p}'`).join('\n')));
             log('클립 이어붙이는 중…');
             await ffmpeg.exec(['-f','concat','-safe','0','-i','list.txt','-c','copy','output.mp4']);
+            outName = 'output.mp4';
+          } else {
+            log('전환(xfade) 적용 중…');
+            const ins = []; parts.forEach(p => ins.push('-i', p));
+            const fp = []; let vlab = '[0:v]', alab = '[0:a]', acc = cd(0);
+            for (let i = 1; i < clips.length; i++) {
+              const tr = clips[i].transIn, d = cd(i);
+              if (tr && tr.type && tr.type !== 'none') {
+                const dur = Math.min(tr.dur, cd(i - 1) * 0.9, d * 0.9);
+                const off = Math.max(0, acc - dur).toFixed(3);
+                fp.push(`${vlab}[${i}:v]xfade=transition=${tr.type}:duration=${dur.toFixed(3)}:offset=${off}[vx${i}]`);
+                fp.push(`${alab}[${i}:a]acrossfade=d=${dur.toFixed(3)}[ax${i}]`);
+                vlab = `[vx${i}]`; alab = `[ax${i}]`; acc = acc + d - dur;
+              } else {
+                fp.push(`${vlab}[${i}:v]concat=n=2:v=1:a=0[vc${i}]`);
+                fp.push(`${alab}[${i}:a]concat=n=2:v=0:a=1[ac${i}]`);
+                vlab = `[vc${i}]`; alab = `[ac${i}]`; acc = acc + d;
+              }
+            }
+            await ffmpeg.exec([...ins, '-filter_complex', fp.join(';'), '-map', vlab, '-map', alab, '-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart','output.mp4']);
             outName = 'output.mp4';
           }
           // Optional effects pass (fade / subtitles) — re-encodes the assembled output once.
