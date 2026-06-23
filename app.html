@@ -113,6 +113,10 @@
     .sub-overlay .lay-img.dragging { cursor: grabbing; outline: 1.5px solid var(--fc-blue); }
     .sub-overlay .lay-img:hover { outline: 1.5px dashed rgba(255,255,255,.6); }
     .sub-overlay .lay-h { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--fc-blue); border: 2px solid #fff; transform: translate(-50%, -50%); pointer-events: auto; cursor: nwse-resize; z-index: 6; }
+    .sub-overlay .lay-end { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,214,10,.35); border: 2px solid var(--fc-sel); transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; z-index: 6; box-shadow: 0 0 0 1px #0006; }
+    .sub-overlay .lay-end::after { content: '끝'; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); font-size: 8px; color: #fff; }
+    .sub-overlay .path-line { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 4; }
+    .sub-row .r button.on { border-color: var(--fc-blue); color: var(--fc-blue); }
 
     /* Timeline */
     .fc-timeline { border-top: 1px solid var(--fc-line); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: #18191c; }
@@ -672,15 +676,25 @@
       const fs = r.h / 16;
       // image layers (under captions)
       for (const im of aImgs) {
-        const img = document.createElement('img');
-        img.className = 'lay-img'; img.src = im.url; img.draggable = false;
         const wpx = im.scale * r.w, hpx = wpx * (im.h / im.w);
-        img.style.left = (im.nx * 100) + '%'; img.style.top = (im.ny * 100) + '%'; img.style.width = wpx + 'px';
-        const handle = document.createElement('span'); handle.className = 'lay-h';
-        handle.style.left = (im.nx * r.w + wpx / 2) + 'px'; handle.style.top = (im.ny * r.h + hpx / 2) + 'px';
-        img.addEventListener('mousedown', ev => startLayerDrag(ev, im, img, handle));
-        handle.addEventListener('mousedown', ev => startImgResize(ev, im, img, handle));
-        ov.appendChild(img); ov.appendChild(handle);
+        const mkImg = (nx, ny) => { const g = document.createElement('img'); g.className = 'lay-img'; g.src = im.url; g.draggable = false; g.style.left = (nx * 100) + '%'; g.style.top = (ny * 100) + '%'; g.style.width = wpx + 'px'; return g; };
+        const mkHandle = (nx, ny, img) => { const h = document.createElement('span'); h.className = 'lay-h'; h.style.left = (nx * r.w + wpx / 2) + 'px'; h.style.top = (ny * r.h + hpx / 2) + 'px'; h.addEventListener('mousedown', ev => startImgResize(ev, im, img, h)); return h; };
+        if (im.anim && !playingSeq) {
+          // editing mode: path line + start image (drag/resize) + end marker (drag)
+          ov.appendChild(pathLine(im.nx * r.w, im.ny * r.h, im.nx2 * r.w, im.ny2 * r.h));
+          const img = mkImg(im.nx, im.ny), handle = mkHandle(im.nx, im.ny, img);
+          img.addEventListener('mousedown', ev => startLayerDrag(ev, im, img, handle));
+          ov.appendChild(img); ov.appendChild(handle);
+          const end = document.createElement('span'); end.className = 'lay-end'; end.style.left = (im.nx2 * 100) + '%'; end.style.top = (im.ny2 * 100) + '%'; end.title = '끝 위치 (드래그)';
+          end.addEventListener('mousedown', ev => startEndDrag(ev, im, end));
+          ov.appendChild(end);
+        } else {
+          let nx = im.nx, ny = im.ny;
+          if (im.anim) { const fr = clamp((playN - im.start) / Math.max(0.01, im.end - im.start), 0, 1); nx = im.nx + (im.nx2 - im.nx) * fr; ny = im.ny + (im.ny2 - im.ny) * fr; }
+          const img = mkImg(nx, ny);
+          if (im.anim) { img.style.cursor = 'default'; ov.appendChild(img); }
+          else { const handle = mkHandle(nx, ny, img); img.addEventListener('mousedown', ev => startLayerDrag(ev, im, img, handle)); ov.appendChild(img); ov.appendChild(handle); }
+        }
       }
       // captions (on top)
       for (const s of aSubs) {
@@ -719,6 +733,28 @@
         handle.style.left = (im.nx * r.width + wpx / 2) + 'px'; handle.style.top = (im.ny * r.height + hpx / 2) + 'px';
       };
       const up = () => { draggingCap = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    }
+    // Dashed path line (start → end) for an animated image layer.
+    function pathLine(x1, y1, x2, y2) {
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'path-line');
+      const ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('x1', x1); ln.setAttribute('y1', y1); ln.setAttribute('x2', x2); ln.setAttribute('y2', y2);
+      ln.setAttribute('stroke', '#ffd60a'); ln.setAttribute('stroke-width', '2'); ln.setAttribute('stroke-dasharray', '6 5');
+      svg.appendChild(ln); return svg;
+    }
+    // Drag the end marker → set the layer's end position (nx2/ny2), live-updating the path line.
+    function startEndDrag(ev, im, el) {
+      ev.preventDefault(); ev.stopPropagation(); draggingCap = true; el.classList.add('dragging');
+      const move = e => {
+        const r = $('subOverlay').getBoundingClientRect();
+        im.nx2 = clamp((e.clientX - r.left) / r.width, 0.02, 0.98);
+        im.ny2 = clamp((e.clientY - r.top) / r.height, 0.02, 0.98);
+        el.style.left = (im.nx2 * 100) + '%'; el.style.top = (im.ny2 * 100) + '%';
+        const ln = $('subOverlay').querySelector('.path-line line'); if (ln) { ln.setAttribute('x2', im.nx2 * r.width); ln.setAttribute('y2', im.ny2 * r.height); }
+      };
+      const up = () => { draggingCap = false; el.classList.remove('dragging'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); renderSubOverlay(); };
       window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
     }
     // Subtitle style controls re-render the live preview.
@@ -1031,8 +1067,13 @@
         row.innerHTML = `<div style="display:flex;align-items:center;gap:8px">
             <img src="${im.url}" style="width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid var(--fc-line);flex:none">
             <div style="font-size:11px;min-width:0"><b style="display:block;color:var(--fc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(im.name)}</b><span class="m" style="color:var(--fc-muted);cursor:pointer;font-variant-numeric:tabular-nums">${fmt(im.start)}–${fmt(im.end)}</span></div></div>
-          <div class="r"><span class="sp"></span><button data-in title="시작=재생헤드">⊙ 시작</button><button data-out title="끝=재생헤드">⊙ 끝</button><button data-del title="삭제">✕</button></div>`;
+          <div class="r"><button data-anim title="이동 애니메이션 (경로)" class="${im.anim ? 'on' : ''}">🛤 이동</button><span class="sp"></span><button data-in title="시작=재생헤드">⊙ 시작</button><button data-out title="끝=재생헤드">⊙ 끝</button><button data-del title="삭제">✕</button></div>`;
         row.querySelector('.m').onclick = () => seekSeq(im.start);
+        row.querySelector('[data-anim]').onclick = () => {
+          im.anim = !im.anim;
+          if (im.anim && (im.nx2 == null)) { im.nx2 = clamp(im.nx + 0.3, 0.05, 0.95); im.ny2 = im.ny; }
+          renderImgList(); renderSubOverlay();
+        };
         row.querySelector('[data-in]').onclick = () => { im.start = clamp(playN, 0, im.end - 0.1); renderImgList(); renderSubOverlay(); };
         row.querySelector('[data-out]').onclick = () => { im.end = clamp(playN, im.start + 0.1, seqDuration()); renderImgList(); renderSubOverlay(); };
         row.querySelector('[data-del]').onclick = () => { imgs = imgs.filter(x => x.id !== im.id); renderImgList(); renderSubOverlay(); };
@@ -1259,8 +1300,18 @@
               fx.imgs.forEach((im, i) => {
                 const tw = Math.max(2, Math.round(im.scale * W));
                 parts.push(`[${i + 1}:v]scale=${tw}:-1[img${i}]`);
-                const nx = im.nx.toFixed(4), ny = im.ny.toFixed(4);
-                parts.push(`${label}[img${i}]overlay=x=(main_w*${nx}-overlay_w/2):y=(main_h*${ny}-overlay_h/2):enable='between(t\\,${im.start.toFixed(3)}\\,${im.end.toFixed(3)})'[v${i}]`);
+                const s = im.start.toFixed(3), e = im.end.toFixed(3), nx = im.nx.toFixed(4), ny = im.ny.toFixed(4);
+                let xExpr, yExpr;
+                if (im.anim && im.nx2 != null) {
+                  // linear move start→end over the layer's lifetime (commas escaped for filtergraph)
+                  const nx2 = im.nx2.toFixed(4), ny2 = im.ny2.toFixed(4), dur = Math.max(0.01, im.end - im.start).toFixed(3);
+                  const fr = `clip((t-${s})/${dur}\\,0\\,1)`;
+                  xExpr = `(main_w*(${nx}+(${nx2}-${nx})*${fr})-overlay_w/2)`;
+                  yExpr = `(main_h*(${ny}+(${ny2}-${ny})*${fr})-overlay_h/2)`;
+                } else {
+                  xExpr = `(main_w*${nx}-overlay_w/2)`; yExpr = `(main_h*${ny}-overlay_h/2)`;
+                }
+                parts.push(`${label}[img${i}]overlay=x=${xExpr}:y=${yExpr}:enable='between(t\\,${s}\\,${e})'[v${i}]`);
                 label = `[v${i}]`;
               });
               if (fx.af.length) parts.push(`[0:a]${fx.af.join(',')}[aout]`);
