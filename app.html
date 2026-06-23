@@ -39,6 +39,8 @@
     .fc-pane > .hd .badge { margin-left: auto; font-size: 9.5px; padding: 2px 7px; border-radius: 4px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); color: var(--fc-muted); text-transform: none; letter-spacing: 0; }
     .hd-btn { font-size: 10.5px; padding: 2px 9px; border-radius: 5px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); color: var(--fc-text); cursor: pointer; text-transform: none; letter-spacing: 0; }
     .hd-btn:hover { border-color: var(--fc-blue); color: var(--fc-blue); }
+    .hd-in { width: 44px; height: 21px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); color: var(--fc-text); border-radius: 5px; padding: 0 5px; font-size: 11px; text-align: center; -moz-appearance: textfield; }
+    .hd-in::-webkit-outer-spin-button, .hd-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .fc-pane > .hd .badge.prog { color: var(--fc-blue); border-color: #1f5c99; }
     .fc-pane > .bd { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 
@@ -143,7 +145,7 @@
     .tl-ruler .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #2c2d32; padding-left: 4px; font-size: 9px; color: var(--fc-muted); line-height: 22px; pointer-events: none; }
     .tl-ruler .mk { position: absolute; top: 2px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--fc-sel); transform: translateX(-5px); cursor: pointer; }
     .tl-track { position: relative; height: calc(100% - 22px); padding: 12px 0; display: flex; flex-direction: column; }
-    .tl-lane { position: relative; flex: 1; min-height: 40px; }
+    .tl-lane { position: relative; flex: none; height: 60px; }
     /* Layer track (subtitles + image overlays) below the clips */
     .tl-olanes { flex: none; margin-top: 4px; }
     .tl-olane { position: relative; height: 17px; margin-top: 3px; }
@@ -222,7 +224,7 @@
       </div>
 
       <div class="fc-pane">
-        <div class="hd">뷰어 <button class="hd-btn" id="capBtn" title="현재 화면 PNG로 저장" style="margin-left:auto">📷 캡처</button><span class="badge" id="modeBadge" style="margin-left:8px">소스</span></div>
+        <div class="hd">뷰어 <button class="hd-btn" id="capBtn" title="현재 화면 PNG로 저장" style="margin-left:auto">📷 캡처</button><input id="capEvery" class="hd-in" type="number" min="0.5" step="0.5" placeholder="초" title="N초마다 PNG"><button class="hd-btn" id="capEveryBtn" title="N초마다 PNG를 만들어 ZIP으로 저장">⏱ 연속</button><span class="badge" id="modeBadge" style="margin-left:8px">소스</span></div>
         <div class="viewer-wrap" id="viewerWrap">
           <div class="viewer-empty" id="viewerEmpty"><div class="big">🎬</div>영상을 가져오면 여기에 표시됩니다</div>
           <video id="video" style="display:none"></video>
@@ -797,6 +799,39 @@
         setTimeout(() => URL.revokeObjectURL(url), 1500);
         log('현재 화면을 PNG로 저장했습니다.');
       }, 'image/png');
+    };
+
+    // ---- Interval capture: a PNG every N seconds across the source → ZIP ----
+    const seekTo = t => new Promise(res => { const on = () => { video.removeEventListener('seeked', on); res(); }; video.addEventListener('seeked', on); video.currentTime = t; });
+    async function getJSZip() { const m = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm'); return m.default || m; }
+    $('capEveryBtn').onclick = async () => {
+      const every = parseFloat($('capEvery').value);
+      if (!every || every <= 0) { log('몇 초마다 캡처할지 입력하세요 (초).'); $('capEvery').focus(); return; }
+      if (!video.videoWidth) { log('먼저 영상을 가져오세요.'); return; }
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) { log('영상 길이를 못 읽었어요. 끝까지 한 번 재생해 주세요.'); return; }
+      const btn = $('capEveryBtn');
+      try {
+        btn.disabled = true; btn.textContent = '⏳ 캡처중';
+        const JSZip = await getJSZip(), zip = new JSZip();
+        const W = video.videoWidth, H = video.videoHeight;
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d');
+        const wasPaused = video.paused, savedT = video.currentTime; video.pause();
+        let n = 0;
+        for (let t = 0; t < dur - 1e-3; t += every) {
+          await seekTo(Math.min(t, dur - 0.05));
+          cx.drawImage(video, 0, 0, W, H);
+          const b = await new Promise(r => cv.toBlob(r, 'image/png'));
+          if (b) zip.file(`frame_${String(n).padStart(3, '0')}_${t.toFixed(1)}s.png`, b);
+          n++; log(`연속 캡처 ${n}장…`);
+        }
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = `webcut-frames-${every}s.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+        log(`연속 캡처 완료: ${n}장 → ZIP 저장`);
+        await seekTo(savedT); if (!wasPaused) video.play();
+      } catch (e) { log('연속 캡처 오류: ' + e); }
+      finally { btn.disabled = false; btn.textContent = '⏱ 연속'; }
     };
     // Toggle the inspector row highlight as the playhead enters/leaves each caption.
     function updateSubActiveRows() {
