@@ -15,7 +15,7 @@
     body { background: var(--fc-bg); overflow: hidden; }
     .topbar { background: #121315; border-bottom: 1px solid var(--fc-line); }
 
-    .fc-app { height: 100vh; width: 100vw; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px minmax(0,1fr) minmax(210px,40%); background: var(--fc-bg); }
+    .fc-app { height: 100vh; width: 100vw; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px minmax(0,1fr) minmax(150px,25%); background: var(--fc-bg); }
 
     .fc-toolbar { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--fc-line); background: linear-gradient(#202125,#191a1c); }
     .fc-toolbar .grp { display: flex; align-items: center; gap: 6px; }
@@ -37,6 +37,8 @@
     .fc-pane + .fc-pane { border-left: 1px solid var(--fc-line); }
     .fc-pane > .hd { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 11px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--fc-muted); border-bottom: 1px solid var(--fc-line); background: #1a1b1e; flex: none; }
     .fc-pane > .hd .badge { margin-left: auto; font-size: 9.5px; padding: 2px 7px; border-radius: 4px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); color: var(--fc-muted); text-transform: none; letter-spacing: 0; }
+    .hd-btn { font-size: 10.5px; padding: 2px 9px; border-radius: 5px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); color: var(--fc-text); cursor: pointer; text-transform: none; letter-spacing: 0; }
+    .hd-btn:hover { border-color: var(--fc-blue); color: var(--fc-blue); }
     .fc-pane > .hd .badge.prog { color: var(--fc-blue); border-color: #1f5c99; }
     .fc-pane > .bd { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 
@@ -220,7 +222,7 @@
       </div>
 
       <div class="fc-pane">
-        <div class="hd">뷰어 <span class="badge" id="modeBadge">소스</span></div>
+        <div class="hd">뷰어 <button class="hd-btn" id="capBtn" title="현재 화면 PNG로 저장" style="margin-left:auto">📷 캡처</button><span class="badge" id="modeBadge" style="margin-left:8px">소스</span></div>
         <div class="viewer-wrap" id="viewerWrap">
           <div class="viewer-empty" id="viewerEmpty"><div class="big">🎬</div>영상을 가져오면 여기에 표시됩니다</div>
           <video id="video" style="display:none"></video>
@@ -759,6 +761,43 @@
     }
     // Subtitle style controls re-render the live preview.
     ['subSize','subColor','subBg'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', renderSubOverlay); });
+
+    // ---- Capture current frame (video + overlays) to PNG ----
+    const loadImg = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+    $('capBtn').onclick = async () => {
+      if (!video.videoWidth) { log('먼저 영상을 가져오세요.'); return; }
+      const W = video.videoWidth, H = video.videoHeight;
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const cx = cv.getContext('2d');
+      cx.drawImage(video, 0, 0, W, H);
+      // image layers (with path-animation interpolation)
+      for (const im of imgs.filter(im => playN >= im.start && playN < im.end)) {
+        let nx = im.nx, ny = im.ny;
+        if (im.anim && im.nx2 != null) { const fr = clamp((playN - im.start) / Math.max(0.01, im.end - im.start), 0, 1); nx = im.nx + (im.nx2 - im.nx) * fr; ny = im.ny + (im.ny2 - im.ny) * fr; }
+        const iw = im.scale * W, ih = iw * (im.h / im.w), el = await loadImg(im.url);
+        if (el) cx.drawImage(el, nx * W - iw / 2, ny * H - ih / 2, iw, ih);
+      }
+      // subtitles (match the overlay style)
+      const aSubs = subs.filter(s => s.text.trim() && playN >= s.start && playN < s.end);
+      if (aSubs.length) {
+        const size = parseFloat($('subSize').value) || 1, color = $('subColor').value, bg = $('subBg').value, fs = H / 16 * size;
+        cx.font = `600 ${fs}px ui-sans-serif, "Apple SD Gothic Neo", system-ui, sans-serif`;
+        cx.textAlign = 'center'; cx.textBaseline = 'middle';
+        for (const s of aSubs) {
+          const x = (s.nx ?? 0.5) * W, y = (s.ny ?? 0.9) * H, tw = cx.measureText(s.text).width;
+          if (bg === 'box') { cx.fillStyle = 'rgba(0,0,0,.5)'; const p = fs * 0.28; cx.fillRect(x - tw / 2 - p, y - fs / 2 - p * 0.4, tw + p * 2, fs + p * 0.8); }
+          if (bg === 'outline') { cx.lineWidth = Math.max(2, fs * 0.13); cx.strokeStyle = '#000'; cx.lineJoin = 'round'; cx.strokeText(s.text, x, y); }
+          cx.fillStyle = color; cx.fillText(s.text, x, y);
+        }
+      }
+      cv.toBlob(b => {
+        if (!b) { log('캡처 실패'); return; }
+        const url = URL.createObjectURL(b), a = document.createElement('a');
+        a.href = url; a.download = 'webcut-frame.png'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        log('현재 화면을 PNG로 저장했습니다.');
+      }, 'image/png');
+    };
     // Toggle the inspector row highlight as the playhead enters/leaves each caption.
     function updateSubActiveRows() {
       document.querySelectorAll('#subList .sub-row').forEach(row => {
