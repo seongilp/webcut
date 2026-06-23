@@ -186,6 +186,7 @@
     .dropzone { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center;
       background: rgba(8,9,12,.82); backdrop-filter: blur(3px); }
     .dropzone.show { display: flex; }
+    #browser.drag-over { box-shadow: inset 0 0 0 2px var(--fc-blue); background: rgba(41,151,255,.05); }
     .dropzone .box { border: 2.5px dashed var(--fc-blue); border-radius: 18px; padding: 54px 76px; text-align: center;
       background: rgba(41,151,255,.06); box-shadow: 0 0 60px -10px rgba(41,151,255,.4); pointer-events: none; }
     .dropzone .box .ic { font-size: 52px; margin-bottom: 14px; }
@@ -501,11 +502,12 @@
     // ---- Drag & drop ----
     let dragDepth = 0;
     const dz = $('dropzone');
-    window.addEventListener('dragenter', e => { if (![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); dragDepth++; dz.classList.add('show'); });
+    const setDragUI = on => { dz.classList.toggle('show', on); $('browser').classList.toggle('drag-over', on); };
+    window.addEventListener('dragenter', e => { if (![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); dragDepth++; setDragUI(true); });
     window.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
-    window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; dz.classList.remove('show'); } });
+    window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; setDragUI(false); } });
     window.addEventListener('drop', e => {
-      e.preventDefault(); dragDepth = 0; dz.classList.remove('show');
+      e.preventDefault(); dragDepth = 0; setDragUI(false);
       const f = [...(e.dataTransfer.files || [])][0];
       if (f) loadVideoFile(f);
     });
@@ -764,22 +766,17 @@
     // Subtitle style controls re-render the live preview.
     ['subSize','subColor','subBg'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', renderSubOverlay); });
 
-    // ---- Capture current frame (video + overlays) to PNG ----
+    // ---- Capture (video frame + overlays) to PNG ----
     const loadImg = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-    $('capBtn').onclick = async () => {
-      if (!video.videoWidth) { log('먼저 영상을 가져오세요.'); return; }
-      const W = video.videoWidth, H = video.videoHeight;
-      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-      const cx = cv.getContext('2d');
+    // Draw the video frame + the active subtitles/images (at the current playN) onto a canvas.
+    async function compositeFrame(cx, W, H) {
       cx.drawImage(video, 0, 0, W, H);
-      // image layers (with path-animation interpolation)
       for (const im of imgs.filter(im => playN >= im.start && playN < im.end)) {
         let nx = im.nx, ny = im.ny;
         if (im.anim && im.nx2 != null) { const fr = clamp((playN - im.start) / Math.max(0.01, im.end - im.start), 0, 1); nx = im.nx + (im.nx2 - im.nx) * fr; ny = im.ny + (im.ny2 - im.ny) * fr; }
         const iw = im.scale * W, ih = iw * (im.h / im.w), el = await loadImg(im.url);
         if (el) cx.drawImage(el, nx * W - iw / 2, ny * H - ih / 2, iw, ih);
       }
-      // subtitles (match the overlay style)
       const aSubs = subs.filter(s => s.text.trim() && playN >= s.start && playN < s.end);
       if (aSubs.length) {
         const size = parseFloat($('subSize').value) || 1, color = $('subColor').value, bg = $('subBg').value, fs = H / 16 * size;
@@ -792,6 +789,12 @@
           cx.fillStyle = color; cx.fillText(s.text, x, y);
         }
       }
+    }
+    $('capBtn').onclick = async () => {
+      if (!video.videoWidth) { log('먼저 영상을 가져오세요.'); return; }
+      const W = video.videoWidth, H = video.videoHeight;
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      await compositeFrame(cv.getContext('2d'), W, H);
       cv.toBlob(b => {
         if (!b) { log('캡처 실패'); return; }
         const url = URL.createObjectURL(b), a = document.createElement('a');
@@ -811,16 +814,22 @@
       const dur = video.duration;
       if (!isFinite(dur) || dur <= 0) { log('영상 길이를 못 읽었어요. 끝까지 한 번 재생해 주세요.'); return; }
       const btn = $('capEveryBtn');
+      // With a sequence, capture the program (overlays included) over sequence time;
+      // otherwise capture raw source frames.
+      const withOverlays = clips.length > 0 && (subs.length || imgs.length);
+      const total = clips.length ? seqDuration() : dur;
       try {
         btn.disabled = true; btn.textContent = '⏳ 캡처중';
         const JSZip = await getJSZip(), zip = new JSZip();
         const W = video.videoWidth, H = video.videoHeight;
         const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const cx = cv.getContext('2d');
-        const wasPaused = video.paused, savedT = video.currentTime; video.pause();
+        const wasPaused = video.paused, savedT = video.currentTime, savedPlayN = playN; video.pause(); stopProgram();
         let n = 0;
-        for (let t = 0; t < dur - 1e-3; t += every) {
-          await seekTo(Math.min(t, dur - 0.05));
-          cx.drawImage(video, 0, 0, W, H);
+        for (let t = 0; t < total - 1e-3; t += every) {
+          const srcT = clips.length ? locate(t).src : t;
+          await seekTo(Math.min(srcT, dur - 0.05));
+          if (withOverlays) { playN = t; await compositeFrame(cx, W, H); }
+          else cx.drawImage(video, 0, 0, W, H);
           const b = await new Promise(r => cv.toBlob(r, 'image/png'));
           if (b) zip.file(`frame_${String(n).padStart(3, '0')}_${t.toFixed(1)}s.png`, b);
           n++; log(`연속 캡처 ${n}장…`);
@@ -828,8 +837,8 @@
         const blob = await zip.generateAsync({ type: 'blob' });
         const url = URL.createObjectURL(blob), a = document.createElement('a');
         a.href = url; a.download = `webcut-frames-${every}s.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-        log(`연속 캡처 완료: ${n}장 → ZIP 저장`);
-        await seekTo(savedT); if (!wasPaused) video.play();
+        log(`연속 캡처 완료: ${n}장${withOverlays ? ' (오버레이 포함)' : ''} → ZIP 저장`);
+        playN = savedPlayN; await seekTo(savedT); renderSubOverlay(); if (!wasPaused) video.play();
       } catch (e) { log('연속 캡처 오류: ' + e); }
       finally { btn.disabled = false; btn.textContent = '⏱ 연속'; }
     };
