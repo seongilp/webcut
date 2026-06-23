@@ -581,43 +581,47 @@
       renderSrcPh();
     }
     function renderSrcPh() { if (duration > 0) $('srcPh').style.left = (video.currentTime/duration*100) + '%'; }
-    function srcSeek(clientX) {
+    function stripTimeAt(clientX) {
       const r = $('srcStrip').getBoundingClientRect();
-      const t = clamp((clientX - r.left)/r.width, 0, 1) * duration;
-      setMode('source'); stopProgram(); video.currentTime = t;
+      return clamp((clientX - r.left) / r.width, 0, 1) * duration;
     }
-    let srcDrag = false, stripDrag = null;
+    let stripDrag = null;
     // Drop zone = anywhere from below the source strip down through the whole timeline panel.
     function overTimeline(y) { return y >= document.querySelector('.fc-timeline').getBoundingClientRect().top - 30; }
+    // Source strip gestures: click = seek · drag sideways = select In/Out · drag down = add to timeline.
     $('srcStrip').addEventListener('mousedown', e => {
       if (!duration) return;
-      e.preventDefault();   // avoid native text/selection drag interfering
-      stripDrag = { startX: e.clientX, startY: e.clientY, mode: 'scrub' };
-      srcDrag = true; srcSeek(e.clientX);
+      e.preventDefault();
+      const t0 = stripTimeAt(e.clientX);
+      stripDrag = { startX: e.clientX, startY: e.clientY, t0, mode: null };
+      setMode('source'); stopProgram(); video.currentTime = t0;
     });
     window.addEventListener('mousemove', e => {
-      if (stripDrag) {
-        if (stripDrag.mode === 'scrub') {
-          if (e.clientY - stripDrag.startY > 22) {        // dragged downward → switch to "add to timeline"
-            stripDrag.mode = 'toTL'; srcDrag = false; $('stripGhost').classList.add('show'); $('thumbPop').classList.remove('show');
-          } else { srcSeek(e.clientX); }
-        }
-        if (stripDrag.mode === 'toTL') {
-          const g = $('stripGhost'); g.style.left = (e.clientX + 12) + 'px'; g.style.top = (e.clientY + 14) + 'px';
-          const over = overTimeline(e.clientY);
-          g.textContent = over ? '＋ 타임라인에 추가' : '아래로 끌어 타임라인에';
-          $('lane').classList.toggle('drop-target', over);
-        }
-        return;
+      if (!stripDrag) return;
+      const dx = e.clientX - stripDrag.startX, dy = e.clientY - stripDrag.startY;
+      if (stripDrag.mode === null) {
+        if (dy > 16 && dy > Math.abs(dx)) { stripDrag.mode = 'toTL'; $('stripGhost').classList.add('show'); $('thumbPop').classList.remove('show'); }
+        else if (Math.abs(dx) > 4) stripDrag.mode = 'select';
+        else return;
       }
-      if (srcDrag) srcSeek(e.clientX);
+      if (stripDrag.mode === 'select') {
+        if (dy > 36) { stripDrag.mode = 'toTL'; $('stripGhost').classList.add('show'); $('thumbPop').classList.remove('show'); }  // carry selection down to timeline
+        else { const t = stripTimeAt(e.clientX); inPt = Math.min(stripDrag.t0, t); outPt = Math.max(stripDrag.t0, t); video.currentTime = t; updateSeg(); renderSrcStrip(); }
+      }
+      if (stripDrag.mode === 'toTL') {
+        const g = $('stripGhost'); g.style.left = (e.clientX + 12) + 'px'; g.style.top = (e.clientY + 14) + 'px';
+        const over = overTimeline(e.clientY);
+        const sel = outPt > inPt + 0.02;
+        g.textContent = over ? (sel ? `＋ 구간 추가 (${fmt(outPt - inPt)})` : '＋ 전체 추가') : '타임라인으로…';
+        $('lane').classList.toggle('drop-target', over);
+      }
     });
     window.addEventListener('mouseup', e => {
       if (stripDrag && stripDrag.mode === 'toTL') {
         $('stripGhost').classList.remove('show'); $('lane').classList.remove('drop-target');
         if (overTimeline(e.clientY)) addClip(inPt, (outPt > inPt ? outPt : duration));
       }
-      stripDrag = null; srcDrag = false;
+      stripDrag = null;
     });
 
     // ---- Hover thumbnail preview over the source strip ----
