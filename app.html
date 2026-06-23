@@ -191,6 +191,9 @@
     .thumb-pop.show { display: block; }
     .thumb-pop canvas { display: block; border-radius: 4px; background: #000; width: 160px; height: auto; }
     .thumb-pop .tt { text-align: center; font-size: 10.5px; color: var(--fc-text); font-variant-numeric: tabular-nums; margin-top: 3px; }
+    .strip-ghost { position: fixed; z-index: 130; pointer-events: none; display: none; background: var(--fc-blue); color: #fff; font-size: 11px; font-weight: 600; padding: 4px 11px; border-radius: 6px; box-shadow: 0 8px 20px -8px #000c; }
+    .strip-ghost.show { display: block; }
+    .tl-lane.drop-target { box-shadow: inset 0 0 0 2px var(--fc-blue); border-radius: 6px; }
     .dropzone .box { border: 2.5px dashed var(--fc-blue); border-radius: 18px; padding: 54px 76px; text-align: center;
       background: rgba(41,151,255,.06); box-shadow: 0 0 60px -10px rgba(41,151,255,.4); pointer-events: none; }
     .dropzone .box .ic { font-size: 52px; margin-bottom: 14px; }
@@ -379,6 +382,7 @@
   <div class="dropzone" id="dropzone"><div class="box"><div class="ic">🎬</div><div class="t">영상을 여기에 놓으세요</div><div class="s">파일은 업로드되지 않고 브라우저에서 바로 열립니다</div></div></div>
   <video id="thumbVideo" muted playsinline preload="auto" style="display:none"></video>
   <div class="thumb-pop" id="thumbPop"><canvas id="thumbCv"></canvas><div class="tt" id="thumbT">0:00.00</div></div>
+  <div class="strip-ghost" id="stripGhost">＋ 클립</div>
   <pre class="log-pop" id="log">대기 중…</pre>
 
   <script type="module">
@@ -582,10 +586,37 @@
       const t = clamp((clientX - r.left)/r.width, 0, 1) * duration;
       setMode('source'); stopProgram(); video.currentTime = t;
     }
-    let srcDrag = false;
-    $('srcStrip').addEventListener('mousedown', e => { if (!duration) return; srcDrag = true; srcSeek(e.clientX); });
-    window.addEventListener('mousemove', e => { if (srcDrag) srcSeek(e.clientX); });
-    window.addEventListener('mouseup', () => srcDrag = false);
+    let srcDrag = false, stripDrag = null;
+    function overTimeline(y) { return y >= $('tlScroll').getBoundingClientRect().top - 24; }
+    $('srcStrip').addEventListener('mousedown', e => {
+      if (!duration) return;
+      stripDrag = { startX: e.clientX, startY: e.clientY, mode: 'scrub' };
+      srcDrag = true; srcSeek(e.clientX);
+    });
+    window.addEventListener('mousemove', e => {
+      if (stripDrag) {
+        if (stripDrag.mode === 'scrub') {
+          if (e.clientY - stripDrag.startY > 22) {        // dragged downward → switch to "add to timeline"
+            stripDrag.mode = 'toTL'; srcDrag = false; $('stripGhost').classList.add('show'); $('thumbPop').classList.remove('show');
+          } else { srcSeek(e.clientX); }
+        }
+        if (stripDrag.mode === 'toTL') {
+          const g = $('stripGhost'); g.style.left = (e.clientX + 12) + 'px'; g.style.top = (e.clientY + 14) + 'px';
+          const over = overTimeline(e.clientY);
+          g.textContent = over ? '＋ 타임라인에 추가' : '아래로 끌어 타임라인에';
+          $('lane').classList.toggle('drop-target', over);
+        }
+        return;
+      }
+      if (srcDrag) srcSeek(e.clientX);
+    });
+    window.addEventListener('mouseup', e => {
+      if (stripDrag && stripDrag.mode === 'toTL') {
+        $('stripGhost').classList.remove('show'); $('lane').classList.remove('drop-target');
+        if (overTimeline(e.clientY)) addClip(inPt, (outPt > inPt ? outPt : duration));
+      }
+      stripDrag = null; srcDrag = false;
+    });
 
     // ---- Hover thumbnail preview over the source strip ----
     const thumbV = $('thumbVideo'); let thumbSeeking = false, thumbPending = null;
