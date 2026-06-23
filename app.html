@@ -587,9 +587,11 @@
       setMode('source'); stopProgram(); video.currentTime = t;
     }
     let srcDrag = false, stripDrag = null;
-    function overTimeline(y) { return y >= $('tlScroll').getBoundingClientRect().top - 24; }
+    // Drop zone = anywhere from below the source strip down through the whole timeline panel.
+    function overTimeline(y) { return y >= document.querySelector('.fc-timeline').getBoundingClientRect().top - 30; }
     $('srcStrip').addEventListener('mousedown', e => {
       if (!duration) return;
+      e.preventDefault();   // avoid native text/selection drag interfering
       stripDrag = { startX: e.clientX, startY: e.clientY, mode: 'scrub' };
       srcDrag = true; srcSeek(e.clientX);
     });
