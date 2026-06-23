@@ -798,6 +798,16 @@
       if (!skimming) return; skimming = false; $('skimmer').style.display = 'none';
       const m = locate(playN); video.currentTime = m.src;   // restore to playhead
     });
+    // Trackpad pinch (= ctrl+wheel) zooms the timeline, centered on the cursor.
+    $('tlScroll').addEventListener('wheel', e => {
+      if (!e.ctrlKey || !clips.length) return;   // plain two-finger scroll passes through
+      e.preventDefault();
+      const sc = $('tlScroll'), screenX = e.clientX - sc.getBoundingClientRect().left;
+      const tAtCursor = (sc.scrollLeft + screenX) / PXPS;
+      autoFit = false;
+      applyZoom(PXPS * Math.exp(-e.deltaY * 0.01));
+      sc.scrollLeft = Math.max(0, tAtCursor * PXPS - screenX);
+    }, { passive: false });
 
     // ---- Range selection (drag on the track) ----
     function setTool(t) {
