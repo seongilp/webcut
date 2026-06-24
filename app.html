@@ -405,7 +405,7 @@
     let PXPS = 90, autoFit = true;
     let inPt = 0, outPt = 0;
     let mode = 'source';          // 'source' | 'program'
-    let playingSeq = false, curIdx = 0, rafId = null, playClock = 0;
+    let playingSeq = false, curIdx = 0, rafId = null, playClock = 0, playEnd = 0;
     let playN = 0;                // sequence time
     let snapOn = true, skimOn = true, skimming = false, skimSaved = 0;
     let history = [], future = [];
@@ -679,7 +679,14 @@
     function programPlay() {
       if (!clips.length) { setMode('source'); video.play(); return; }
       setMode('program'); playingSeq = true; $('playBtn').textContent = '⏸';
-      if (playN >= seqDuration() - 1e-3) playN = 0;
+      // If a range is selected, play only that span (loop within it).
+      if (hasRange()) {
+        const [a, b] = rangeBounds(); playEnd = b;
+        if (playN < a - 1e-3 || playN >= b - 1e-3) playN = a;
+      } else {
+        playEnd = seqDuration();
+        if (playN >= seqDuration() - 1e-3) playN = 0;
+      }
       const m = locate(playN); curIdx = m.idx; video.currentTime = m.src; playClock = performance.now(); video.play(); loopProgram();
     }
     function loopProgram() {
@@ -700,6 +707,7 @@
         const realSeq = offsetOf(curIdx) + Math.max(0, video.currentTime - clips[curIdx].start);
         if (Math.abs(realSeq - playN) > 0.15) playN = realSeq;
         playN = Math.min(playN, offsetOf(curIdx) + (c.end - c.start));
+        if (playN >= playEnd - 1e-3) { stopProgram(); playN = Math.min(playEnd, seqDuration()); updatePlayhead(); return; }
         updatePlayhead();
       }
       rafId = requestAnimationFrame(loopProgram);
