@@ -57,7 +57,12 @@
     .fc-pane > .bd { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 
     .browser-empty { color: var(--fc-muted); font-size: 12px; line-height: 1.6; }
-    .src-card { display: flex; gap: 9px; align-items: center; padding: 8px; border-radius: 8px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); }
+    .src-card { position: relative; display: flex; gap: 9px; align-items: center; padding: 8px; border-radius: 8px; background: var(--fc-panel-2); border: 1px solid var(--fc-line); margin-bottom: 6px; cursor: pointer; transition: border-color .12s; }
+    .src-card:hover { border-color: var(--fc-line2); }
+    .src-card.active { border-color: var(--fc-blue); box-shadow: inset 0 0 0 1px var(--fc-blue); }
+    .src-card .m { min-width: 0; }
+    .src-card .src-del { position: absolute; top: 5px; right: 5px; width: 18px; height: 18px; border-radius: 4px; border: none; background: #00000077; color: #fff; font-size: 10px; cursor: pointer; display: none; align-items: center; justify-content: center; }
+    .src-card:hover .src-del { display: flex; }
     .src-card .filmstrip { width: 52px; height: 34px; border-radius: 4px; flex: none; background: repeating-linear-gradient(90deg,#0000 0 6px,#00000055 6px 8px), var(--fc-clip); border: 1px solid #00000066; }
     .src-card .m { font-size: 11.5px; min-width: 0; }
     .src-card .m b { display: block; color: var(--fc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -415,7 +420,7 @@
     </div>
   </div>
 
-  <input type="file" id="file" accept="video/*" />
+  <input type="file" id="file" accept="video/*" multiple />
   <div class="dropzone" id="dropzone"><div class="box"><div class="ic">🎬</div><div class="t">영상을 여기에 놓으세요</div><div class="s">파일은 업로드되지 않고 브라우저에서 바로 열립니다</div></div></div>
   <video id="thumbVideo" muted playsinline preload="auto" style="display:none"></video>
   <div class="thumb-pop" id="thumbPop"><canvas id="thumbCv"></canvas><div class="tt" id="thumbT">0:00.00</div></div>
@@ -451,9 +456,11 @@
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
     // ---- State ----
-    let clips = [];               // {id, start, end}  (source time)
+    let clips = [];               // {id, srcId, start, end}  (source time)
     let markers = [];             // sequence times
-    let sourceFile = null, sourceExt = 'mp4', duration = 0;
+    let sources = [], activeSrcId = null, srcSeq = 0, duration = 0;  // library of imported videos
+    const activeSource = () => sources.find(s => s.id === activeSrcId);
+    const srcById = id => sources.find(s => s.id === id);
     let selectedId = null, clipSeq = 0;
     let PXPS = 90, autoFit = true;
     let inPt = 0, outPt = 0;
@@ -558,19 +565,59 @@
     }
     $('toggleLib').onclick = () => setPanel('lib', !$('fcTop').classList.contains('no-lib'));
     $('toggleInsp').onclick = () => setPanel('insp', !$('fcTop').classList.contains('no-insp'));
-    $('file').onchange = e => loadVideoFile(e.target.files[0]);
+    $('file').onchange = e => { [...e.target.files].forEach(loadVideoFile); e.target.value = ''; };
 
+    // Add a video to the library (multi-source). Keeps backwards-compatible name.
     function loadVideoFile(f) {
       if (!f) return;
       if (!f.type.startsWith('video/') && !/\.(mp4|mov|webm|mkv|avi|m4v|m2ts|ts)$/i.test(f.name)) {
         log('영상 파일이 아닙니다: ' + f.name); return;
       }
-      sourceFile = f; sourceExt = (f.name.split('.').pop() || 'mp4').toLowerCase();
-      const _u = URL.createObjectURL(f); video.src = _u; $('thumbVideo').src = _u;
-      video.style.display = 'block'; $('viewerEmpty').style.display = 'none';
+      const s = { id: ++srcSeq, file: f, url: URL.createObjectURL(f), name: f.name,
+        ext: (f.name.split('.').pop() || 'mp4').toLowerCase(), size: f.size, dur: 0, w: 0, h: 0 };
+      sources.push(s);
       log(`가져옴: ${f.name} (${(f.size/1048576).toFixed(1)} MB)`);
-      $('browser').innerHTML = `<div class="src-card"><div class="filmstrip"></div><div class="m"><b title="${f.name}">${f.name}</b><span>${(f.size/1048576).toFixed(1)} MB · <span id="srcDur">…</span></span></div></div>`;
+      renderLibrary();
+      setActiveSource(s.id);
       ensureLoaded().catch(err => { log('엔진 로드 실패: ' + err); statusEl.textContent = '로드 실패'; statusEl.className = 'pill'; });
+    }
+    // Make a library item the active source (shown in the viewer for marking In/Out).
+    function setActiveSource(id) {
+      const s = srcById(id); if (!s) return;
+      activeSrcId = id;
+      video.src = s.url; video.dataset.cur = id; $('thumbVideo').src = s.url;
+      video.style.display = 'block'; $('viewerEmpty').style.display = 'none';
+      duration = s.dur || 0; inPt = 0; outPt = duration;
+      setMode('source'); stopProgram();
+      updateSeg(); renderSrcStrip(); renderLibrary();
+    }
+    function renderLibrary() {
+      const box = $('browser');
+      if (!sources.length) { box.innerHTML = '<div class="browser-empty"><b style="color:var(--fc-text)">가져오기</b>로 영상을 불러오세요. 여러 개 추가해 이어붙일 수 있어요.</div>'; return; }
+      box.innerHTML = sources.map(s => `<div class="src-card${s.id === activeSrcId ? ' active' : ''}" data-sid="${s.id}">
+          <div class="filmstrip"></div>
+          <div class="m"><b title="${s.name}">${s.name}</b><span>${(s.size/1048576).toFixed(1)} MB · ${s.dur ? fmt(s.dur) : '…'}</span></div>
+          <button class="src-del" data-del="${s.id}" title="삭제">✕</button></div>`).join('');
+      box.querySelectorAll('.src-card').forEach(el => {
+        el.onclick = ev => { if (ev.target.matches('.src-del')) return; setActiveSource(+el.dataset.sid); };
+        el.querySelector('.src-del').onclick = ev => { ev.stopPropagation(); removeSource(+el.dataset.del); };
+      });
+    }
+    function removeSource(id) {
+      if (clips.some(c => c.srcId === id)) { log('타임라인에서 사용 중인 영상은 지울 수 없어요.'); return; }
+      sources = sources.filter(s => s.id !== id);
+      if (activeSrcId === id) { activeSrcId = null; if (sources.length) setActiveSource(sources[sources.length - 1].id); else { video.removeAttribute('src'); video.load(); video.style.display = 'none'; $('viewerEmpty').style.display = 'flex'; duration = 0; } }
+      renderLibrary();
+    }
+    // Load a given source into the <video> (for playback across clips). Resolves when ready.
+    function ensureVideoSrc(srcId) {
+      const s = srcById(srcId); if (!s) return Promise.resolve();
+      if (String(video.dataset.cur) === String(srcId)) return Promise.resolve();
+      return new Promise(res => {
+        const on = () => { video.removeEventListener('loadeddata', on); res(); };
+        video.addEventListener('loadeddata', on);
+        video.dataset.cur = srcId; video.src = s.url;
+      });
     }
 
     // ---- Drag & drop ----
@@ -582,21 +629,23 @@
     window.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; setDragUI(false); } });
     window.addEventListener('drop', e => {
       e.preventDefault(); dragDepth = 0; setDragUI(false);
-      const f = [...(e.dataTransfer.files || [])][0];
-      if (f) loadVideoFile(f);
+      [...(e.dataTransfer.files || [])].forEach(loadVideoFile);
     });
     // Some MP4/WebM files report `duration` as Infinity (or 0) until forced.
     // Seek to a huge time once to make the browser compute the real duration.
     let durationResolving = false;
     function applyDuration(d) {
       if (!isFinite(d) || d <= 0) return;
+      const s = activeSource();
+      if (s) { s.dur = d; s.w = video.videoWidth || s.w; s.h = video.videoHeight || s.h; }
       duration = d;
       if (outPt <= 0 || outPt > duration) { outPt = duration; inPt = 0; }
       $('totT').textContent = fmt(duration);
-      const sd = $('srcDur'); if (sd) sd.textContent = fmt(duration);
-      updateSeg(); renderSrcStrip();
+      updateSeg(); renderSrcStrip(); renderLibrary();
     }
     function resolveDuration() {
+      // Only resolve for the active source (skip while playback has swapped in another source).
+      if (String(video.dataset.cur) !== String(activeSrcId)) return;
       const d = video.duration;
       if ((d === Infinity || isNaN(d) || d <= 0) && !durationResolving && video.readyState >= 1) {
         durationResolving = true;
@@ -657,7 +706,10 @@
       e.preventDefault();
       const t0 = stripTimeAt(e.clientX);
       stripDrag = { startX: e.clientX, startY: e.clientY, t0, mode: null };
-      setMode('source'); stopProgram(); video.currentTime = t0;
+      setMode('source'); stopProgram();
+      // playback may have swapped in another source → restore the active one
+      if (String(video.dataset.cur) === String(activeSrcId)) video.currentTime = t0;
+      else ensureVideoSrc(activeSrcId).then(() => { video.currentTime = t0; });
     });
     window.addEventListener('mousemove', e => {
       if (!stripDrag) return;
@@ -730,11 +782,11 @@
     $('addClip').onclick = () => { let e = outPt; if (!(isFinite(e) && e > inPt)) e = bestDuration(); addClip(inPt, e); };
     $('addFull').onclick = () => addClip(0, bestDuration());
     function addClip(s, e) {
-      if (!sourceFile) { log('먼저 영상을 가져오세요.'); return; }
+      if (!activeSrcId) { log('먼저 영상을 가져오세요.'); return; }
       if (!isFinite(s) || !isFinite(e) || e <= 0) { log('영상 길이를 아직 못 읽었어요. 잠시 후 다시 시도하거나, 끝까지 한 번 재생한 뒤 추가해 주세요.'); return; }
       if (e - s < 0.05) { log('구간이 너무 짧습니다.'); return; }
       pushHistory();
-      clips.push({ start: s, end: e, id: ++clipSeq });
+      clips.push({ srcId: activeSrcId, start: s, end: e, id: ++clipSeq });
       selectedId = clipSeq; renderTimeline();
     }
 
@@ -750,7 +802,9 @@
         playEnd = seqDuration();
         if (playN >= seqDuration() - 1e-3) playN = 0;
       }
-      const m = locate(playN); curIdx = m.idx; video.currentTime = m.src; playClock = performance.now(); video.play(); loopProgram();
+      const m = locate(playN); curIdx = m.idx; const c0 = clips[curIdx];
+      const begin = () => { video.currentTime = m.src; playClock = performance.now(); video.play(); loopProgram(); };
+      if (String(video.dataset.cur) === String(c0.srcId)) begin(); else ensureVideoSrc(c0.srcId).then(begin);
     }
     function loopProgram() {
       if (!playingSeq) return;
@@ -761,8 +815,13 @@
       if (video.currentTime >= c.end - 0.03) {
         curIdx++;
         if (curIdx >= clips.length) { stopProgram(); playN = seqDuration(); updatePlayhead(); return; }
-        video.currentTime = clips[curIdx].start;
-        playN = offsetOf(curIdx);
+        const nc = clips[curIdx]; playN = offsetOf(curIdx);
+        if (playN >= playEnd - 1e-3) { stopProgram(); playN = Math.min(playEnd, seqDuration()); updatePlayhead(); return; }
+        if (String(video.dataset.cur) !== String(nc.srcId)) {   // next clip is a different source → async switch
+          ensureVideoSrc(nc.srcId).then(() => { if (!playingSeq) return; video.currentTime = nc.start; playClock = performance.now(); video.play(); loopProgram(); });
+          return;
+        }
+        video.currentTime = nc.start;
       } else {
         // Advance the playhead by real elapsed time for buttery 60fps motion;
         // resync to the (coarsely-updated) source time only when drift is large.
@@ -787,7 +846,9 @@
       if (!clips.length) return;
       stopProgram(); setMode('program');
       playN = clamp(t, 0, seqDuration());
-      const m = locate(playN); curIdx = m.idx; video.currentTime = m.src; updatePlayhead();
+      const m = locate(playN); curIdx = m.idx; const c = clips[curIdx];
+      if (String(video.dataset.cur) === String(c.srcId)) { video.currentTime = m.src; updatePlayhead(); }
+      else ensureVideoSrc(c.srcId).then(() => { video.currentTime = m.src; updatePlayhead(); });
     }
     function updatePlayhead() {
       const x = playN * PXPS;
@@ -1467,29 +1528,34 @@
         $('export').disabled = true; statusEl.textContent = '내보내는 중…'; statusEl.className = 'pill busy';
         bar.style.width = '0%'; $('exportStat').textContent = '처리 중…';
         const t0 = performance.now(), precise = $('precise').checked;
-        // Mount the source via WORKERFS so FFmpeg reads it straight from the File —
-        // no copying the whole (possibly multi-GB / 1-hour) video into WASM memory.
-        let inputPath = 'input.' + sourceExt, mountDir = null, wroteInput = false;
-        try {
-          mountDir = '/mnt' + (++mountSeq);
-          await ffmpeg.createDir(mountDir);
-          await ffmpeg.mount('WORKERFS', { files: [sourceFile] }, mountDir);
-          inputPath = mountDir + '/' + sourceFile.name;
-          log('소스 마운트(WORKERFS) — 메모리 복사 없이 직접 읽기');
-        } catch (e) {
-          mountDir = null;
-          log('WORKERFS 미지원 → 메모리 로드로 대체');
-          await ffmpeg.writeFile(inputPath, await fetchFile(sourceFile)); wroteInput = true;
+        // Multi-source: mount every distinct source used by the clips via WORKERFS.
+        const usedIds = [...new Set(clips.map(c => c.srcId))];
+        const multi = usedIds.length > 1;
+        const mounts = {}, cleanup = [];
+        for (const sid of usedIds) {
+          const s = srcById(sid); let path, dir = null, wrote = false;
+          try { dir = '/mnt' + (++mountSeq); await ffmpeg.createDir(dir); await ffmpeg.mount('WORKERFS', { files: [s.file] }, dir); path = dir + '/' + s.file.name; }
+          catch (e) { dir = null; path = `in_${sid}.${s.ext}`; await ffmpeg.writeFile(path, await fetchFile(s.file)); wrote = true; }
+          mounts[sid] = path; cleanup.push({ dir, path, wrote });
         }
+        // When mixing different videos, normalize every clip to one resolution so they concat.
+        let TW = 0, TH = 0;
+        if (multi) {
+          TW = Math.max(...usedIds.map(id => srcById(id).w || 0)) || (video.videoWidth || 1280);
+          TH = Math.max(...usedIds.map(id => srcById(id).h || 0)) || (video.videoHeight || 720);
+          TW -= TW % 2; TH -= TH % 2;
+          log(`소스 ${usedIds.length}개 · ${TW}×${TH}로 맞춰 재인코딩`);
+        } else log('소스 마운트(WORKERFS)');
         try {
           const parts = [];
           for (let i = 0; i < clips.length; i++) {
             const c = clips[i], part = `part${i}.mp4`, dur = (c.end - c.start).toFixed(3);
-            const args = ['-ss', c.start.toFixed(3), '-i', inputPath, '-t', dur];
-            if (precise) args.push('-c:v','libx264','-preset','ultrafast','-c:a','aac','-movflags','+faststart');
-            else args.push('-c','copy','-avoid_negative_ts','1');
+            const args = ['-ss', c.start.toFixed(3), '-i', mounts[c.srcId], '-t', dur];
+            if (multi) args.push('-vf', `scale=${TW}:${TH}:force_original_aspect_ratio=decrease,pad=${TW}:${TH}:(ow-iw)/2:(oh-ih)/2,setsar=1`, '-r', '30', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-movflags', '+faststart');
+            else if (precise) args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-movflags', '+faststart');
+            else args.push('-c', 'copy', '-avoid_negative_ts', '1');
             args.push(part);
-            log(`클립 ${i+1}/${clips.length} 자르는 중…`); await ffmpeg.exec(args); parts.push(part);
+            log(`클립 ${i+1}/${clips.length} 처리 중…`); await ffmpeg.exec(args); parts.push(part);
           }
           const hasTrans = clips.slice(1).some(c => c.transIn && c.transIn.type && c.transIn.type !== 'none');
           const cd = i => clips[i].end - clips[i].start;
@@ -1577,8 +1643,10 @@
           statusEl.textContent = '내보내기 완료'; statusEl.className = 'pill ok'; log(`내보내기 완료 ✓ (${secs}s)`);
           for (const p of parts) { try { await ffmpeg.deleteFile(p); } catch (_) {} }
         } finally {
-          if (mountDir) { try { await ffmpeg.unmount(mountDir); } catch (_) {} try { await ffmpeg.deleteDir(mountDir); } catch (_) {} }
-          if (wroteInput) { try { await ffmpeg.deleteFile(inputPath); } catch (_) {} }
+          for (const cu of cleanup) {
+            if (cu.dir) { try { await ffmpeg.unmount(cu.dir); } catch (_) {} try { await ffmpeg.deleteDir(cu.dir); } catch (_) {} }
+            if (cu.wrote) { try { await ffmpeg.deleteFile(cu.path); } catch (_) {} }
+          }
         }
       } catch (err) { log('내보내기 오류: ' + err); $('exportStat').textContent = '오류 발생'; statusEl.textContent = '오류'; statusEl.className = 'pill'; }
       finally { $('export').disabled = clips.length === 0; }
