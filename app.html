@@ -32,7 +32,19 @@
     .pill.ok { color: #5fd38a; border-color: #2f6b46; background: rgba(95,211,138,.08); }
     .pill.busy { color: var(--fc-sel); border-color: #6b5f1a; }
 
-    .fc-top { display: grid; grid-template-columns: 232px 1fr 252px; min-height: 0; }
+    .fc-top { display: grid; grid-template-columns: 232px minmax(0,1fr) 252px; min-height: 0; }
+    /* Collapsible side panels (toggles + auto on narrow screens) */
+    .fc-top.no-lib { grid-template-columns: minmax(0,1fr) 252px; }
+    .fc-top.no-insp { grid-template-columns: 232px minmax(0,1fr); }
+    .fc-top.no-lib.no-insp { grid-template-columns: minmax(0,1fr); }
+    .fc-top.no-lib > .pane-lib { display: none; }
+    .fc-top.no-insp > .pane-insp { display: none; }
+    #toggleLib.on, #toggleInsp.on { background: rgba(41,151,255,.18); border-color: var(--fc-blue); color: var(--fc-blue); }
+    @media (max-width: 820px) {
+      .fc-top { grid-template-columns: 200px minmax(0,1fr) 220px; }
+      .fc-toolbar { overflow-x: auto; }
+      .fc-toolbar .title { display: none; }
+    }
     .fc-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
     .fc-pane + .fc-pane { border-left: 1px solid var(--fc-line); }
     .fc-pane > .hd { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 11px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--fc-muted); border-bottom: 1px solid var(--fc-line); background: #1a1b1e; flex: none; }
@@ -209,6 +221,8 @@
       <span class="title">✂️ web<span class="x">cut</span></span>
       <div class="grp" style="margin-left:8px">
         <button class="ticon primary" id="importBtn">＋ 가져오기</button>
+        <button class="ticon" id="toggleLib" title="라이브러리 접기/펼치기">◧</button>
+        <button class="ticon" id="toggleInsp" title="인스펙터 접기/펼치기">◨</button>
       </div>
       <div class="spacer"></div>
       <div class="grp">
@@ -221,8 +235,8 @@
       </div>
     </div>
 
-    <div class="fc-top">
-      <div class="fc-pane">
+    <div class="fc-top" id="fcTop">
+      <div class="fc-pane pane-lib">
         <div class="hd">라이브러리</div>
         <div class="bd" id="browser">
           <div class="browser-empty">
@@ -254,7 +268,7 @@
         </div>
       </div>
 
-      <div class="fc-pane">
+      <div class="fc-pane pane-insp">
         <div class="hd">인스펙터</div>
         <div class="bd">
           <div class="insp-sec">
@@ -495,6 +509,16 @@
 
     // ---- Import ----
     $('importBtn').onclick = () => $('file').click();
+
+    // ---- Collapsible side panels (for narrow/mobile screens) ----
+    function setPanel(side, collapsed) {
+      const cls = side === 'lib' ? 'no-lib' : 'no-insp';
+      $('fcTop').classList.toggle(cls, collapsed);
+      $(side === 'lib' ? 'toggleLib' : 'toggleInsp').classList.toggle('on', collapsed);
+      renderSubOverlay();   // viewer width changed → reposition overlay
+    }
+    $('toggleLib').onclick = () => setPanel('lib', !$('fcTop').classList.contains('no-lib'));
+    $('toggleInsp').onclick = () => setPanel('insp', !$('fcTop').classList.contains('no-insp'));
     $('file').onchange = e => loadVideoFile(e.target.files[0]);
 
     function loadVideoFile(f) {
@@ -1523,6 +1547,8 @@
 
     window.addEventListener('resize', () => { if (clips.length) renderTimeline(); renderSubOverlay(); });
     renderTimeline();
+    // Start with side panels collapsed on narrow / mobile screens (run last, after all state is defined).
+    if (window.innerWidth < 760) { setPanel('lib', true); setPanel('insp', true); }
   </script>
 </body>
 </html>
