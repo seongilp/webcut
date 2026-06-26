@@ -125,6 +125,7 @@
     .color-in { width: 100%; height: 26px; margin-top: 3px; padding: 0; border: 1px solid var(--fc-line); border-radius: 6px; background: var(--fc-panel-2); cursor: pointer; }
     .color-in::-webkit-color-swatch-wrapper { padding: 2px; } .color-in::-webkit-color-swatch { border: none; border-radius: 4px; }
     /* image layer on the viewer overlay */
+    .sub-overlay .cap, .sub-overlay .lay-img, .sub-overlay .lay-h, .sub-overlay .lay-end { touch-action: none; }
     .sub-overlay .lay-img { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; user-select: none; -webkit-user-drag: none; }
     .sub-overlay .lay-img.dragging { cursor: grabbing; outline: 1.5px solid var(--fc-blue); }
     .sub-overlay .lay-img:hover { outline: 1.5px dashed rgba(255,255,255,.6); }
@@ -206,6 +207,28 @@
     .strip-ghost { position: fixed; z-index: 130; pointer-events: none; display: none; background: var(--fc-blue); color: #fff; font-size: 11px; font-weight: 600; padding: 4px 11px; border-radius: 6px; box-shadow: 0 8px 20px -8px #000c; }
     .strip-ghost.show { display: block; }
     .tl-lane.drop-target { box-shadow: inset 0 0 0 2px var(--fc-blue); border-radius: 6px; }
+    /* Help FAB + modal + command palette */
+    .help-fab { position: fixed; right: 16px; bottom: 16px; z-index: 90; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--fc-line2); background: var(--fc-panel-2); color: var(--fc-text); font-size: 16px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px -6px #000a; }
+    .help-fab:hover { border-color: var(--fc-blue); color: var(--fc-blue); }
+    .modal-back { position: fixed; inset: 0; z-index: 200; display: none; align-items: flex-start; justify-content: center; padding-top: 12vh; background: rgba(8,9,12,.6); backdrop-filter: blur(3px); }
+    .modal-back.show { display: flex; }
+    .modal { display: none; width: min(560px, 92vw); background: #14151a; border: 1px solid var(--fc-line2); border-radius: 12px; box-shadow: 0 30px 80px -30px #000d; overflow: hidden; }
+    .modal.show { display: block; }
+    .modal-h { display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--fc-line); font-size: 14px; }
+    .modal-h .modal-x { margin-left: auto; background: none; border: none; color: var(--fc-muted); cursor: pointer; font-size: 14px; }
+    .modal-bd { padding: 16px; max-height: 64vh; overflow: auto; }
+    .help-tip { font-size: 12.5px; color: #cdd0d8; line-height: 1.6; background: var(--fc-panel-2); border: 1px solid var(--fc-line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+    .help-tip b { color: var(--fc-text); }
+    .help-keys { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin-top: 6px; }
+    .help-keys .k { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--fc-muted); padding: 3px 0; }
+    .help-keys .k kbd { background: var(--fc-panel-2); border: 1px solid var(--fc-line2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; font-size: 11px; color: var(--fc-text); font-family: ui-monospace, Menlo, monospace; }
+    .palette { width: min(560px, 92vw); }
+    .palette input { width: 100%; padding: 15px 18px; background: transparent; border: none; border-bottom: 1px solid var(--fc-line); color: var(--fc-text); font-size: 15px; outline: none; }
+    .palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
+    .palette-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--fc-text); }
+    .palette-item .pi-hint { margin-left: auto; font-size: 11px; color: var(--fc-muted); }
+    .palette-item.sel, .palette-item:hover { background: rgba(41,151,255,.16); }
+    .palette-empty { padding: 16px; text-align: center; color: var(--fc-muted); font-size: 13px; }
     .dropzone .box { border: 2.5px dashed var(--fc-blue); border-radius: 18px; padding: 54px 76px; text-align: center;
       background: rgba(41,151,255,.06); box-shadow: 0 0 60px -10px rgba(41,151,255,.4); pointer-events: none; }
     .dropzone .box .ic { font-size: 52px; margin-bottom: 14px; }
@@ -398,6 +421,22 @@
   <div class="thumb-pop" id="thumbPop"><canvas id="thumbCv"></canvas><div class="tt" id="thumbT">0:00.00</div></div>
   <div class="strip-ghost" id="stripGhost">＋ 클립</div>
   <pre class="log-pop" id="log">대기 중…</pre>
+
+  <button class="help-fab" id="helpFab" title="도움말 (?)">?</button>
+  <div class="modal-back" id="modalBack">
+    <div class="modal" id="helpModal">
+      <div class="modal-h"><b>사용법 &amp; 단축키</b><button class="modal-x" data-close>✕</button></div>
+      <div class="modal-bd">
+        <div class="help-tip">📥 <b>가져오기</b> 또는 영상을 끌어다 놓아 불러오세요. 소스 바를 <b>가로로 드래그</b>하면 구간 선택, 그대로 <b>아래로 드래그</b>하면 타임라인에 추가됩니다.</div>
+        <div class="help-tip">✂️ 자막·이미지는 영상 위에서 <b>드래그(터치 가능)</b>로 위치 이동, 모서리로 크기 조절. 타임라인은 <b>트랙패드 핀치</b>로 줌. 범위 선택 후 <b>Space</b>면 그 구간만 재생.</div>
+        <div class="help-keys" id="helpKeys"></div>
+      </div>
+    </div>
+    <div class="modal palette" id="paletteModal">
+      <input id="paletteInput" placeholder="명령 검색…  (예: 자막, 내보내기, 분할, 줌)" autocomplete="off" />
+      <div class="palette-list" id="paletteList"></div>
+    </div>
+  </div>
 
   <script type="module">
     import { FFmpeg } from './vendor/ffmpeg/index.js';
@@ -796,22 +835,22 @@
       for (const im of aImgs) {
         const wpx = im.scale * r.w, hpx = wpx * (im.h / im.w);
         const mkImg = (nx, ny) => { const g = document.createElement('img'); g.className = 'lay-img'; g.src = im.url; g.draggable = false; g.style.left = (nx * 100) + '%'; g.style.top = (ny * 100) + '%'; g.style.width = wpx + 'px'; return g; };
-        const mkHandle = (nx, ny, img) => { const h = document.createElement('span'); h.className = 'lay-h'; h.style.left = (nx * r.w + wpx / 2) + 'px'; h.style.top = (ny * r.h + hpx / 2) + 'px'; h.addEventListener('mousedown', ev => startImgResize(ev, im, img, h)); return h; };
+        const mkHandle = (nx, ny, img) => { const h = document.createElement('span'); h.className = 'lay-h'; h.style.left = (nx * r.w + wpx / 2) + 'px'; h.style.top = (ny * r.h + hpx / 2) + 'px'; h.addEventListener('pointerdown', ev => startImgResize(ev, im, img, h)); return h; };
         if (im.anim && !playingSeq) {
           // editing mode: path line + start image (drag/resize) + end marker (drag)
           ov.appendChild(pathLine(im.nx * r.w, im.ny * r.h, im.nx2 * r.w, im.ny2 * r.h));
           const img = mkImg(im.nx, im.ny), handle = mkHandle(im.nx, im.ny, img);
-          img.addEventListener('mousedown', ev => startLayerDrag(ev, im, img, handle));
+          img.addEventListener('pointerdown', ev => startLayerDrag(ev, im, img, handle));
           ov.appendChild(img); ov.appendChild(handle);
           const end = document.createElement('span'); end.className = 'lay-end'; end.style.left = (im.nx2 * 100) + '%'; end.style.top = (im.ny2 * 100) + '%'; end.title = '끝 위치 (드래그)';
-          end.addEventListener('mousedown', ev => startEndDrag(ev, im, end));
+          end.addEventListener('pointerdown', ev => startEndDrag(ev, im, end));
           ov.appendChild(end);
         } else {
           let nx = im.nx, ny = im.ny;
           if (im.anim) { const fr = clamp((playN - im.start) / Math.max(0.01, im.end - im.start), 0, 1); nx = im.nx + (im.nx2 - im.nx) * fr; ny = im.ny + (im.ny2 - im.ny) * fr; }
           const img = mkImg(nx, ny);
           if (im.anim) { img.style.cursor = 'default'; ov.appendChild(img); }
-          else { const handle = mkHandle(nx, ny, img); img.addEventListener('mousedown', ev => startLayerDrag(ev, im, img, handle)); ov.appendChild(img); ov.appendChild(handle); }
+          else { const handle = mkHandle(nx, ny, img); img.addEventListener('pointerdown', ev => startLayerDrag(ev, im, img, handle)); ov.appendChild(img); ov.appendChild(handle); }
         }
       }
       // captions (on top)
@@ -820,7 +859,7 @@
         el.className = 'cap'; capStyle(el, fs);
         el.style.left = ((s.nx ?? 0.5) * 100) + '%'; el.style.top = ((s.ny ?? 0.9) * 100) + '%';
         el.textContent = s.text; el.title = '드래그해서 위치 이동';
-        el.addEventListener('mousedown', ev => startLayerDrag(ev, s, el, null));
+        el.addEventListener('pointerdown', ev => startLayerDrag(ev, s, el, null));
         ov.appendChild(el);
       }
     }
@@ -835,8 +874,8 @@
         el.style.left = (layer.nx * 100) + '%'; el.style.top = (layer.ny * 100) + '%';
         if (handle) { const wpx = el.offsetWidth, hpx = el.offsetHeight; handle.style.left = (layer.nx * r.width + wpx / 2) + 'px'; handle.style.top = (layer.ny * r.height + hpx / 2) + 'px'; }
       };
-      const up = () => { draggingCap = false; el.classList.remove('dragging'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      const up = () => { draggingCap = false; el.classList.remove('dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     }
     // Resize an image layer via its corner handle → updates scale (fraction of video width).
     function startImgResize(ev, im, img, handle) {
@@ -850,8 +889,8 @@
         img.style.width = wpx + 'px';
         handle.style.left = (im.nx * r.width + wpx / 2) + 'px'; handle.style.top = (im.ny * r.height + hpx / 2) + 'px';
       };
-      const up = () => { draggingCap = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      const up = () => { draggingCap = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     }
     // Dashed path line (start → end) for an animated image layer.
     function pathLine(x1, y1, x2, y2) {
@@ -872,8 +911,8 @@
         el.style.left = (im.nx2 * 100) + '%'; el.style.top = (im.ny2 * 100) + '%';
         const ln = $('subOverlay').querySelector('.path-line line'); if (ln) { ln.setAttribute('x2', im.nx2 * r.width); ln.setAttribute('y2', im.ny2 * r.height); }
       };
-      const up = () => { draggingCap = false; el.classList.remove('dragging'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); renderSubOverlay(); };
-      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      const up = () => { draggingCap = false; el.classList.remove('dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); renderSubOverlay(); };
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     }
     // Subtitle style controls re-render the live preview.
     ['subSize','subColor','subBg'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', renderSubOverlay); });
@@ -1322,10 +1361,10 @@
         renderLayerTrack();
       };
       const up = () => {
-        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
         renderSubs(); renderImgList(); renderSubOverlay();   // sync inspector + preview
       };
-      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     }
 
     // ---- Transitions between adjacent clips (stored on clip.transIn) ----
@@ -1544,6 +1583,63 @@
       } catch (err) { log('내보내기 오류: ' + err); $('exportStat').textContent = '오류 발생'; statusEl.textContent = '오류'; statusEl.className = 'pill'; }
       finally { $('export').disabled = clips.length === 0; }
     };
+
+    // ---- Help & command palette ----
+    const CMDS = [
+      { n: '영상 가져오기', h: 'Import', r: () => $('importBtn').click() },
+      { n: '내보내기 (Export)', r: () => $('export').click() },
+      { n: '전체를 클립으로', r: () => $('addFull').click() },
+      { n: '자막 추가', h: 'E', r: () => $('addSub').click() },
+      { n: '이미지 레이어 추가', r: () => $('addImg').click() },
+      { n: '재생헤드에서 분할 (블레이드)', h: 'B', r: () => $('bladeBtn').click() },
+      { n: '마커 추가', h: 'M', r: () => $('markBtn').click() },
+      { n: '재생 / 정지', h: 'Space', r: () => $('playBtn').click() },
+      { n: '실행취소', h: '⌘Z', r: () => $('undoBtn').click() },
+      { n: '다시실행', h: '⌘⇧Z', r: () => $('redoBtn').click() },
+      { n: '타임라인 맞춤 (줌)', r: () => $('zoomFit').click() },
+      { n: '현재 화면 캡처 (PNG)', r: () => $('capBtn').click() },
+      { n: '연속 캡처 (N초마다)', r: () => $('capEveryBtn').click() },
+      { n: '라이브러리 접기/펼치기', r: () => $('toggleLib').click() },
+      { n: '인스펙터 접기/펼치기', r: () => $('toggleInsp').click() },
+      { n: '로그 보기', r: () => $('logToggle').click() },
+      { n: '도움말 / 단축키', h: '?', r: () => openHelp() },
+    ];
+    const KEYS = [
+      ['Space', '재생/정지'], ['I / O', 'In / Out 표시'], ['E', '타임라인에 추가'], ['B', '분할(블레이드)'],
+      ['M', '마커'], ['R / V', '범위 / 선택 도구'], ['N', '스내핑'], ['S', '스키밍'],
+      ['← / →', '1프레임 이동 (⇧=1초)'], ['↑ / ↓', '편집점 이동'], ['Del', '삭제'], ['Esc', '범위 해제 / 닫기'],
+      ['⌘Z / ⌘⇧Z', '실행취소 / 다시실행'], ['⌘K', '명령 팔레트'], ['?', '도움말'], ['Home / End', '처음 / 끝'],
+    ];
+    let palSel = 0, palFiltered = CMDS;
+    function openHelp() { $('helpKeys').innerHTML = KEYS.map(([k, d]) => `<div class="k"><span>${d}</span><kbd>${k}</kbd></div>`).join(''); $('modalBack').classList.add('show'); $('helpModal').classList.add('show'); $('paletteModal').classList.remove('show'); }
+    function openPalette() { $('modalBack').classList.add('show'); $('paletteModal').classList.add('show'); $('helpModal').classList.remove('show'); $('paletteInput').value = ''; renderPalette(''); $('paletteInput').focus(); }
+    function closeModal() { $('modalBack').classList.remove('show'); $('helpModal').classList.remove('show'); $('paletteModal').classList.remove('show'); }
+    function renderPalette(q) {
+      q = q.trim().toLowerCase();
+      palFiltered = q ? CMDS.filter(c => c.n.toLowerCase().includes(q) || (c.h || '').toLowerCase().includes(q)) : CMDS;
+      palSel = 0;
+      const box = $('paletteList');
+      box.innerHTML = palFiltered.length ? palFiltered.map((c, i) => `<div class="palette-item${i === 0 ? ' sel' : ''}" data-i="${i}"><span>${c.n}</span>${c.h ? `<span class="pi-hint">${c.h}</span>` : ''}</div>`).join('') : '<div class="palette-empty">결과 없음</div>';
+      box.querySelectorAll('.palette-item').forEach(el => el.onclick = () => runCmd(+el.dataset.i));
+    }
+    function runCmd(i) { const c = palFiltered[i]; closeModal(); if (c) setTimeout(c.r, 30); }
+    function highlightPal() { $('paletteList').querySelectorAll('.palette-item').forEach((el, i) => el.classList.toggle('sel', i === palSel)); const sel = $('paletteList').querySelector('.palette-item.sel'); if (sel) sel.scrollIntoView({ block: 'nearest' }); }
+    $('paletteInput').addEventListener('input', e => renderPalette(e.target.value));
+    $('paletteInput').addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); palSel = Math.min(palSel + 1, palFiltered.length - 1); highlightPal(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); palSel = Math.max(palSel - 1, 0); highlightPal(); }
+      else if (e.key === 'Enter') { e.preventDefault(); runCmd(palSel); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+    });
+    $('helpFab').onclick = openHelp;
+    $('modalBack').addEventListener('click', e => { if (e.target === $('modalBack')) closeModal(); });
+    document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeModal);
+    // Global keys (capture phase so they win over editor shortcuts)
+    window.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopImmediatePropagation(); openPalette(); }
+      else if (e.key === '?' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); e.stopImmediatePropagation(); openHelp(); }
+      else if (e.key === 'Escape' && $('modalBack').classList.contains('show')) { e.stopImmediatePropagation(); closeModal(); }
+    }, true);
 
     window.addEventListener('resize', () => { if (clips.length) renderTimeline(); renderSubOverlay(); });
     renderTimeline();
